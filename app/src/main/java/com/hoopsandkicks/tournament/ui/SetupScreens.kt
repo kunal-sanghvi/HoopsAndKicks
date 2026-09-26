@@ -110,6 +110,18 @@ fun HomeScreen(
     // A code saved from a previous "Join a tournament" — lets a viewer who pressed back, or fully
     // closed the app, get straight back into the same room instead of re-typing the code.
     val resumeCode = remember { ViewerStore.lastCode() }
+    HomeContent(all, resumeCode, onNew, onOpen, onJoin, onResumeWatching)
+}
+
+@Composable
+private fun HomeContent(
+    all: List<Tournament>,
+    resumeCode: String?,
+    onNew: () -> Unit,
+    onOpen: (Tournament) -> Unit,
+    onJoin: () -> Unit,
+    onResumeWatching: (String) -> Unit
+) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val shown = all.filter {
         when (tab) {
@@ -361,6 +373,11 @@ private fun TournamentCard(t: Tournament, onClick: () -> Unit) {
 
 @Composable
 fun CreateTournamentScreen(onBack: () -> Unit, onCreated: (String) -> Unit) {
+    CreateTournamentContent(onBack, save = { HoopsApp.repo.save(it) }, onCreated = onCreated)
+}
+
+@Composable
+private fun CreateTournamentContent(onBack: () -> Unit, save: (Tournament) -> Unit, onCreated: (String) -> Unit) {
     var sport by rememberSaveable { mutableStateOf(Sport.BASKETBALL) }
     var name by rememberSaveable { mutableStateOf("") }
     var startAt by rememberSaveable { mutableLongStateOf(0L) }
@@ -442,7 +459,7 @@ fun CreateTournamentScreen(onBack: () -> Unit, onCreated: (String) -> Unit) {
                     draftStep = 1,
                     createdAt = System.currentTimeMillis()
                 )
-                HoopsApp.repo.save(t)
+                save(t)
                 onCreated(t.id)
             }, icon = Icons.Filled.ChevronRight, enabled = valid)
         }
@@ -553,9 +570,17 @@ private fun TimePickerDialogWrapper(onDismiss: () -> Unit, onConfirm: () -> Unit
 
 // ======================= PLAYERS =======================
 
+/** Applies a change to the tournament being edited. The real screens pass the database; previews pass a no-op. */
+private typealias Mutate = ((Tournament) -> Tournament) -> Unit
+
 @Composable
 fun PlayersScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
     val t = observeTournament(id) ?: return
+    PlayersContent(t, { change -> HoopsApp.repo.mutate(id, change) }, onBack, onNext)
+}
+
+@Composable
+private fun PlayersContent(t: Tournament, mutate: Mutate, onBack: () -> Unit, onNext: () -> Unit) {
     val positions = t.sport.positions
     var name by rememberSaveable { mutableStateOf("") }
     var position by rememberSaveable(t.sport) { mutableStateOf(positions.first()) }
@@ -566,7 +591,7 @@ fun PlayersScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
     fun add(n: String) {
         val clean = n.trim()
         if (clean.isEmpty()) return
-        HoopsApp.repo.mutate(id) { it.copy(players = it.players + Player(newId(), clean, position, skill)) }
+        mutate { it.copy(players = it.players + Player(newId(), clean, position, skill)) }
     }
 
     val need = maxOf(2, t.teams.size, t.teamTarget)
@@ -642,11 +667,11 @@ fun PlayersScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
                     Badge(p.position, Line, Mute)
                     Spacer(Modifier.width(8.dp))
                     SkillDots(p.skill, small = true) { s ->
-                        HoopsApp.repo.mutate(id) { tt -> tt.copy(players = tt.players.map { if (it.id == p.id) it.copy(skill = s) else it }) }
+                        mutate { tt -> tt.copy(players = tt.players.map { if (it.id == p.id) it.copy(skill = s) else it }) }
                     }
                     Box(
                         Modifier.size(44.dp).clickable {
-                            HoopsApp.repo.mutate(id) { tt ->
+                            mutate { tt ->
                                 tt.copy(
                                     players = tt.players.filter { it.id != p.id },
                                     teams = tt.teams.map { tm -> tm.copy(playerIds = tm.playerIds.filter { x -> x != p.id }) }
@@ -664,7 +689,7 @@ fun PlayersScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SecondaryButton("Paste list", { showPaste = true }, icon = Icons.AutoMirrored.Filled.FormatListBulleted)
                 PrimaryButton("Continue: teams", {
-                    HoopsApp.repo.mutate(id) { it.copy(draftStep = maxOf(it.draftStep, 2)) }
+                    mutate { it.copy(draftStep = maxOf(it.draftStep, 2)) }
                     onNext()
                 }, Modifier.weight(1f), icon = Icons.Filled.ChevronRight, enabled = canContinue)
             }
@@ -686,7 +711,7 @@ fun PlayersScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     val names = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
-                    HoopsApp.repo.mutate(id) { tt -> tt.copy(players = tt.players + names.map { Player(newId(), it, position, skill) }) }
+                    mutate { tt -> tt.copy(players = tt.players + names.map { Player(newId(), it, position, skill) }) }
                     showPaste = false
                 }) { Text("Add all") }
             },
@@ -727,6 +752,11 @@ private fun nextColor(existing: List<Team>): Int {
 @Composable
 fun TeamsScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
     val t = observeTournament(id) ?: return
+    TeamsContent(t, { change -> HoopsApp.repo.mutate(id, change) }, onBack, onNext)
+}
+
+@Composable
+private fun TeamsContent(t: Tournament, mutate: Mutate, onBack: () -> Unit, onNext: () -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
     var colorIdx by rememberSaveable { mutableIntStateOf(-1) }
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
@@ -739,9 +769,9 @@ fun TeamsScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
         val n = name.trim().ifEmpty { suggestion }
         val ed = editing
         if (ed != null) {
-            HoopsApp.repo.mutate(id) { tt -> tt.copy(teams = tt.teams.map { if (it.id == ed) it.copy(name = n, color = pickedColor) else it }) }
+            mutate { tt -> tt.copy(teams = tt.teams.map { if (it.id == ed) it.copy(name = n, color = pickedColor) else it }) }
         } else {
-            HoopsApp.repo.mutate(id) { tt ->
+            mutate { tt ->
                 val added = tt.teams + Team(newId(), n, pickedColor)
                 tt.copy(teams = clearAssignments(added), teamTarget = maxOf(tt.teamTarget, added.size))
             }
@@ -799,7 +829,7 @@ fun TeamsScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
                     })
                     Spacer(Modifier.width(8.dp))
                     IconCircle(Icons.Filled.Delete, "Delete ${tm.name}", {
-                        HoopsApp.repo.mutate(id) { tt -> tt.copy(teams = clearAssignments(tt.teams.filter { it.id != tm.id })) }
+                        mutate { tt -> tt.copy(teams = clearAssignments(tt.teams.filter { it.id != tm.id })) }
                         if (editing == tm.id) { editing = null; name = ""; colorIdx = -1 }
                     })
                 }
@@ -809,7 +839,7 @@ fun TeamsScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
         BottomBar {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SecondaryButton("Auto-name", {
-                    HoopsApp.repo.mutate(id) { tt ->
+                    mutate { tt ->
                         var list = tt.teams
                         while (list.size < tt.teamTarget) {
                             list = list + Team(newId(), nextTeamName(list), nextColor(list))
@@ -818,7 +848,7 @@ fun TeamsScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
                     }
                 }, icon = Icons.Filled.Bolt)
                 PrimaryButton("Continue: split players", {
-                    HoopsApp.repo.mutate(id) { it.copy(draftStep = maxOf(it.draftStep, 3)) }
+                    mutate { it.copy(draftStep = maxOf(it.draftStep, 3)) }
                     onNext()
                 }, Modifier.weight(1f), icon = Icons.Filled.ChevronRight, enabled = t.teams.size >= 2)
             }
@@ -828,15 +858,20 @@ fun TeamsScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
 
 // ======================= SPLIT =======================
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SplitScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
     val t = observeTournament(id) ?: return
+    SplitContent(t, { change -> HoopsApp.repo.mutate(id, change) }, onBack, onNext)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SplitContent(t: Tournament, mutate: Mutate, onBack: () -> Unit, onNext: () -> Unit) {
     var mode by rememberSaveable { mutableIntStateOf(0) }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
 
     fun apply(map: Map<String, List<String>>) {
-        HoopsApp.repo.mutate(id) { tt -> tt.copy(teams = tt.teams.map { it.copy(playerIds = map[it.id] ?: emptyList()) }) }
+        mutate { tt -> tt.copy(teams = tt.teams.map { it.copy(playerIds = map[it.id] ?: emptyList()) }) }
         selected = null
     }
 
@@ -901,7 +936,7 @@ fun SplitScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
                                 .clickable(enabled = selected != null) {
                                     val pid = selected
                                     if (pid != null) {
-                                        HoopsApp.repo.mutate(id) { tt ->
+                                        mutate { tt ->
                                             tt.copy(teams = tt.teams.map {
                                                 if (it.id == tm.id) it.copy(playerIds = it.playerIds + pid)
                                                 else it.copy(playerIds = it.playerIds.filter { x -> x != pid })
@@ -923,7 +958,7 @@ fun SplitScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
                                     val name = t.player(pid)?.name ?: "?"
                                     Box(
                                         Modifier.fillMaxWidth().height(36.dp)
-                                            .clickable { selected = pid; apply2(id, pid) }
+                                            .clickable { selected = pid; apply2(mutate, pid) }
                                             .padding(horizontal = 8.dp),
                                         contentAlignment = Alignment.CenterStart
                                     ) { HText(name, 13.sp, FontWeight.Medium, maxLines = 1) }
@@ -941,7 +976,7 @@ fun SplitScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SecondaryButton(if (mode == 2) "Clear all" else "Shuffle again", { shuffle(mode) }, icon = Icons.Filled.Shuffle)
                 PrimaryButton("Lock teams", {
-                    HoopsApp.repo.mutate(id) { it.copy(draftStep = maxOf(it.draftStep, 4)) }
+                    mutate { it.copy(draftStep = maxOf(it.draftStep, 4)) }
                     onNext()
                 }, Modifier.weight(1f), icon = Icons.Filled.Lock, enabled = pool.isEmpty() && t.teams.size >= 2)
             }
@@ -950,14 +985,14 @@ fun SplitScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
 }
 
 /** Removes a player from whichever team holds them (they then show in the unassigned pool). */
-private fun apply2(id: String, playerId: String) {
-    HoopsApp.repo.mutate(id) { tt -> tt.copy(teams = tt.teams.map { it.copy(playerIds = it.playerIds.filter { x -> x != playerId }) }) }
+private fun apply2(mutate: Mutate, playerId: String) {
+    mutate { tt -> tt.copy(teams = tt.teams.map { it.copy(playerIds = it.playerIds.filter { x -> x != playerId }) }) }
 }
 
 // ─── Previews ───────────────────────────────────────────────────────────
-// HomeScreen, CreateTournamentScreen, PlayersScreen, TeamsScreen and SplitScreen read the real
-// database (HoopsApp.repo), which doesn't exist inside the Design tab, so only the pieces that take
-// plain data can be previewed here.
+// The real screens read the database (HoopsApp.repo), which doesn't exist inside the Design tab.
+// Each one is split into a thin wrapper plus a *Content function that takes plain data, and the
+// previews below call the Content functions with sample data. Taps in a preview change nothing.
 
 private val previewPlayers = listOf(
     Player("p1", "Alex", "Guard", 4), Player("p2", "Sam", "Forward", 3),
@@ -973,6 +1008,53 @@ private val previewDraft = Tournament(
     id = "draft", name = "Summer Hoops", players = previewPlayers, playerTarget = 8,
     status = TStatus.DRAFT, sport = Sport.BASKETBALL
 )
+
+private val previewHomeList = listOf(
+    previewDraft.copy(id = "a", name = "City Cup", status = TStatus.ACTIVE, teams = previewTeams),
+    previewDraft.copy(id = "b", name = "Night League", status = TStatus.ACTIVE, teams = previewTeams, sport = Sport.FOOTBALL),
+    previewDraft
+)
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Home with tournaments")
+@Composable
+private fun PreviewHomeScreen() {
+    HoopsTheme { HomeContent(previewHomeList, resumeCode = null, onNew = {}, onOpen = {}, onJoin = {}, onResumeWatching = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Home empty, resume room")
+@Composable
+private fun PreviewHomeScreenEmpty() {
+    HoopsTheme { HomeContent(emptyList(), resumeCode = "K7M2QX", onNew = {}, onOpen = {}, onJoin = {}, onResumeWatching = {}) }
+}
+
+private val previewFullDraft = previewDraft.copy(
+    players = previewPlayers + Player("p5", "Casey", "Forward", 3) + Player("p6", "Morgan", "Center", 4),
+    teams = previewTeams, teamTarget = 3, draftStep = 3
+)
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 900, name = "Create tournament")
+@Composable
+private fun PreviewCreateTournament() {
+    HoopsTheme { CreateTournamentContent(onBack = {}, save = {}, onCreated = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Players")
+@Composable
+private fun PreviewPlayers() {
+    HoopsTheme { PlayersContent(previewFullDraft, mutate = {}, onBack = {}, onNext = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Teams")
+@Composable
+private fun PreviewTeams() {
+    HoopsTheme { TeamsContent(previewFullDraft, mutate = {}, onBack = {}, onNext = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Split players")
+@Composable
+private fun PreviewSplit() {
+    HoopsTheme { SplitContent(previewFullDraft, mutate = {}, onBack = {}, onNext = {}) }
+}
 
 @Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, name = "Join screen")
 @Composable
