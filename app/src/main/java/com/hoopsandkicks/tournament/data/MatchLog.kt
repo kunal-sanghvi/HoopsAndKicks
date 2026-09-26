@@ -72,7 +72,7 @@ object MatchLog {
 
     /** Rebuilds a match's live state from its log, starting from [base]'s fixed data (teams, stage, lineups). */
     fun replay(base: Match, events: List<MatchEvent>, format: GameFormat): Match {
-        val f = format.forMatch(base.isFinal)
+        val f = format.forMatch(base)
         val ordered = events.sortedBy { it.seq }
         var m = base.copy(
             status = MatchStatus.SCHEDULED, period = 1, scoreA = 0, scoreB = 0,

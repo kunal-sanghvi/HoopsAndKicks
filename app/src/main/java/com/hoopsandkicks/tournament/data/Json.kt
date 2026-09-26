@@ -36,6 +36,8 @@ object Json {
         o.put("algorithm", t.algorithm.name)
         o.put("groups", t.groups)
         o.put("advance", t.advance)
+        o.put("rrSemis", t.rrSemis)
+        o.put("rrFinal", t.rrFinal)
         o.put("status", t.status.name)
         o.put("draftStep", t.draftStep)
         o.put("createdAt", t.createdAt)
@@ -66,6 +68,8 @@ object Json {
                 .put("allow3", f.allow3)
                 .put("finalsDifferent", f.finalsDifferent)
                 .put("finalsPeriodMin", f.finalsPeriodMin)
+                .put("semisDifferent", f.semisDifferent)
+                .put("semisPeriodMin", f.semisPeriodMin)
         )
 
         val ma = JSONArray()
@@ -178,12 +182,14 @@ object Json {
         val format = if (fo == null) GameFormat() else GameFormat(
             type = FormatType.valueOf(fo.optString("type", "HALVES")),
             periodMin = fo.optInt("periodMin", 12),
-            breakMin = fo.optInt("breakMin", 5),
+            breakMin = fo.optInt("breakMin", 5).coerceAtLeast(1),
             allow1 = fo.optBoolean("allow1", true),
             allow2 = fo.optBoolean("allow2", true),
             allow3 = fo.optBoolean("allow3", true),
             finalsDifferent = fo.optBoolean("finalsDifferent", false),
-            finalsPeriodMin = fo.optInt("finalsPeriodMin", 15)
+            finalsPeriodMin = fo.optInt("finalsPeriodMin", 15),
+            semisDifferent = fo.optBoolean("semisDifferent", false),
+            semisPeriodMin = fo.optInt("semisPeriodMin", 15)
         )
         val matches = ArrayList<Match>()
         val ma = o.optJSONArray("matches")
@@ -205,6 +211,9 @@ object Json {
             algorithm = Algorithm.valueOf(o.optString("algorithm", "GROUP_KO")),
             groups = o.optInt("groups", 2),
             advance = o.optInt("advance", 2),
+            rrSemis = o.optBoolean("rrSemis", false),
+            // Tournaments saved before the option existed always played a final.
+            rrFinal = o.optBoolean("rrFinal", true),
             format = format,
             matches = matches,
             status = TStatus.valueOf(o.optString("status", "DRAFT")),

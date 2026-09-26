@@ -6,7 +6,7 @@ fun newId(): String = UUID.randomUUID().toString().replace("-", "").take(12)
 
 enum class Algorithm(val title: String, val blurb: String) {
     GROUP_KO("Group Stage → Semis → Finals", "Teams play inside groups, top teams reach the knockouts."),
-    ROUND_ROBIN("Round Robin", "Every team plays every other team once, then the top 2 meet in a final."),
+    ROUND_ROBIN("Round Robin", "Every team plays every other team once, with optional semi-finals and a final."),
     SINGLE_ELIM("Single Elimination", "Lose once and you are out. Fastest format."),
     DOUBLE_ELIM("Double Elimination", "Two losses to be knocked out. Winners and elimination sides."),
     SWISS("Swiss", "Fixed rounds, paired by current standings.")
@@ -71,15 +71,20 @@ data class GameFormat(
     val allow2: Boolean = true,
     val allow3: Boolean = true,
     val finalsDifferent: Boolean = false,
-    val finalsPeriodMin: Int = 15
+    val finalsPeriodMin: Int = 15,
+    val semisDifferent: Boolean = false,
+    val semisPeriodMin: Int = 15
 ) {
     fun periods(): Int = if (type == FormatType.HALVES) 2 else 1
 
     /** Estimated regulation length in minutes; ignores shootout tie-breaks, which can't be predicted. */
     fun estimatedDurationMin(): Int = periodMin * periods() + breakMin * (periods() - 1)
 
-    fun forMatch(isFinal: Boolean): GameFormat =
-        if (isFinal && finalsDifferent) copy(periodMin = finalsPeriodMin) else this
+    fun forMatch(m: Match): GameFormat = when {
+        m.isFinal && finalsDifferent -> copy(periodMin = finalsPeriodMin)
+        m.isSemi && semisDifferent -> copy(periodMin = semisPeriodMin)
+        else -> this
+    }
 
     fun pointOptions(): List<Int> {
         val l = mutableListOf<Int>()
@@ -183,6 +188,9 @@ data class Match(
      */
     val pinned: Boolean = false
 ) {
+    /** A semi-final round match (any algorithm that draws a 4-team knockout round). */
+    val isSemi: Boolean get() = !isFinal && !bye && stage == Scheduler.roundName(4)
+
     /** Ordering key used to find the latest stage/round frontier. */
     fun frontier(): Int = stageIndex * 1000 + round
 }
@@ -207,6 +215,10 @@ data class Tournament(
     val algorithm: Algorithm = Algorithm.GROUP_KO,
     val groups: Int = 2,
     val advance: Int = 2,
+    /** Round Robin only: play semi-finals between the top 4 after the round robin (needs more than 4 teams). */
+    val rrSemis: Boolean = false,
+    /** Round Robin only: play a final between the top 2 (or the semi-final winners) (needs more than 2 teams). */
+    val rrFinal: Boolean = false,
     val format: GameFormat = GameFormat(),
     val matches: List<Match> = emptyList(),
     val status: TStatus = TStatus.DRAFT,
@@ -232,7 +244,7 @@ data class Tournament(
 fun Match.estimatedEndAt(t: Tournament): Long? {
     val start = scheduledAt ?: return null
     if (bye) return null
-    return start + t.format.forMatch(isFinal).estimatedDurationMin() * 60_000L
+    return start + t.format.forMatch(this).estimatedDurationMin() * 60_000L
 }
 
 /**

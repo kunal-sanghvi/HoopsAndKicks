@@ -75,6 +75,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -82,11 +83,16 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import com.hoopsandkicks.tournament.HoopsApp
+import com.hoopsandkicks.tournament.data.Algorithm
 import com.hoopsandkicks.tournament.data.Match
 import com.hoopsandkicks.tournament.data.MatchEventType
+import com.hoopsandkicks.tournament.data.Player
+import com.hoopsandkicks.tournament.data.Team
+import kotlin.random.Random
 import com.hoopsandkicks.tournament.data.MatchLog
 import com.hoopsandkicks.tournament.data.MatchStatus
 import com.hoopsandkicks.tournament.data.Scheduler
+import com.hoopsandkicks.tournament.data.Sport
 import com.hoopsandkicks.tournament.data.StageType
 import com.hoopsandkicks.tournament.data.TStatus
 import com.hoopsandkicks.tournament.data.Tournament
@@ -132,7 +138,21 @@ fun TournamentScreen(
     val t = observeTournament(id)
     LaunchedEffect(t == null) { if (t == null) onDeleted() }
     if (t == null) return
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    TournamentContent(t, onBack, onFixtures, onFormat, onOpenMatch, readOnly)
+}
+
+@Composable
+private fun TournamentContent(
+    t: Tournament,
+    onBack: () -> Unit,
+    onFixtures: () -> Unit,
+    onFormat: () -> Unit,
+    onOpenMatch: (String, Boolean) -> Unit,
+    readOnly: Boolean,
+    initialTab: Int = 0
+) {
+    val id = t.id
+    var tab by rememberSaveable { mutableIntStateOf(initialTab) }
     var menu by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmStopHosting by remember { mutableStateOf(false) }
@@ -489,7 +509,7 @@ private fun UpNextCard(t: Tournament, m: Match, live: Boolean, onOpenMatch: (Str
             HText("vs", 14.sp, FontWeight.Medium, MuteDark)
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { DisplayText(t.teamName(m.teamBId).uppercase(), 32.sp, OnDark, align = TextAlign.End) }
         }
-        HText(t.format.forMatch(m.isFinal).summary(), 13.sp, FontWeight.Normal, MuteDark)
+        HText(t.format.forMatch(m).summary(), 13.sp, FontWeight.Normal, MuteDark)
         if (readOnly) {
             if (live) LiveScoreLine(t, m)
             if (pastPlan) PastPlanRow(onFix = null, dark = true)
@@ -693,6 +713,14 @@ fun FixturesScreen(
     onReorder: () -> Unit = {}
 ) {
     val t = observeTournament(id) ?: return
+    FixturesContent(t, onBack, onOpenMatch, readOnly, onReorder)
+}
+
+@Composable
+private fun FixturesContent(
+    t: Tournament, onBack: () -> Unit, onOpenMatch: (String, Boolean) -> Unit, readOnly: Boolean, onReorder: () -> Unit
+) {
+    val id = t.id
     val existing = t.stages()
     val names = existing.map { it.second }
     val placeholders = Scheduler.expectedStages(t).filter { it !in names }
@@ -767,6 +795,12 @@ private val ReorderRowHeight = 72.dp
 @Composable
 fun ReorderFixturesScreen(id: String, onBack: () -> Unit) {
     val t = observeTournament(id) ?: return
+    ReorderFixturesContent(t, onBack)
+}
+
+@Composable
+private fun ReorderFixturesContent(t: Tournament, onBack: () -> Unit) {
+    val id = t.id
     val courts = (1..t.courts.coerceAtLeast(1)).toList()
     var court by rememberSaveable { mutableIntStateOf(courts.first()) }
 
@@ -970,11 +1004,18 @@ fun MatchCard(t: Tournament, m: Match, onOpenMatch: (String, Boolean) -> Unit, r
 fun MatchReadyScreen(id: String, mid: String, onBack: () -> Unit, onChangeFormat: () -> Unit, onStarted: () -> Unit) {
     val t = observeTournament(id) ?: return
     val m = t.match(mid) ?: return
+    MatchReadyContent(t, m, onBack, onChangeFormat, onStarted)
+}
+
+@Composable
+private fun MatchReadyContent(t: Tournament, m: Match, onBack: () -> Unit, onChangeFormat: () -> Unit, onStarted: () -> Unit) {
+    val id = t.id
+    val mid = m.id
     val teamA = t.team(m.teamAId)
     val teamB = t.team(m.teamBId)
     var selA by remember { mutableStateOf(teamA?.playerIds?.toSet() ?: emptySet()) }
     var selB by remember { mutableStateOf(teamB?.playerIds?.toSet() ?: emptySet()) }
-    val fmt = t.format.forMatch(m.isFinal)
+    val fmt = t.format.forMatch(m)
     // Informational only: the tentative plan never stops a match from being started (real games run long).
     val pastPlan = m.status == MatchStatus.SCHEDULED && m.exceedsWindow(t)
     var fixing by remember { mutableStateOf(false) }
@@ -1106,7 +1147,7 @@ private fun LineupColumn(
             Spacer(Modifier.width(8.dp))
             HText(name, 16.sp, FontWeight.Bold, maxLines = 1)
         }
-        if (ids.isEmpty()) HText("No players on this team. Baskets will be credited to the team.", 12.sp, FontWeight.Normal, Mute)
+        if (ids.isEmpty()) HText("No players on this team. ${if (t.sport == Sport.FOOTBALL) "Goals" else "Baskets"} will be credited to the team.", 12.sp, FontWeight.Normal, Mute)
         ids.forEach { pid ->
             val on = pid in selected
             Row(
@@ -1154,6 +1195,140 @@ fun ViewerScreen(code: String, onBack: () -> Unit, onFixtures: (String) -> Unit)
                     14.sp, FontWeight.Medium, Mute, align = TextAlign.Center
                 )
             }
+        }
+    }
+}
+
+// ─── Previews ───────────────────────────────────────────────────────────
+// These call the private *Content functions with a sample tournament built by the app's own Scheduler
+// (4 teams, round robin, 2 courts: one finished match, one live, the rest scheduled). Taps do nothing.
+// ViewerScreen is not previewed: it depends on the live Firebase connection (ViewerStore).
+
+private val previewActive: Tournament by lazy {
+    val start = 1_750_000_000_000L
+    val positions = listOf("Guard", "Forward", "Center")
+    val players = (1..12).map { Player("p$it", "Player $it", positions[it % 3], (it % 5) + 1) }
+    val teams = listOf(
+        Team("a", "Red Hawks", 0, players.subList(0, 3).map { it.id }),
+        Team("b", "Blue Jays", 1, players.subList(3, 6).map { it.id }),
+        Team("c", "Green Mambas", 2, players.subList(6, 9).map { it.id }),
+        Team("d", "Gold Kings", 3, players.subList(9, 12).map { it.id })
+    )
+    val base = Tournament(
+        id = "preview", name = "City Cup", startAt = start, endAt = start + 6 * 3_600_000L, courts = 2,
+        playerTarget = 12, teamTarget = 4, players = players, teams = teams,
+        algorithm = Algorithm.ROUND_ROBIN, status = TStatus.ACTIVE, draftStep = 5, createdAt = start
+    )
+    val scheduled = Scheduler.scheduleTimes(base.copy(matches = Scheduler.generate(base, Random(1))))
+    val ms = scheduled.matches.toMutableList()
+    ms[0] = ms[0].copy(status = MatchStatus.FINISHED, scoreA = 54, scoreB = 48, winnerId = ms[0].teamAId)
+    ms[1] = ms[1].copy(status = MatchStatus.LIVE, scoreA = 12, scoreB = 9, period = 1, remainingSec = 420)
+    scheduled.copy(matches = ms)
+}
+
+private val previewUpNext: Tournament by lazy {
+    previewActive.copy(matches = previewActive.matches.map {
+        if (it.status == MatchStatus.LIVE) it.copy(status = MatchStatus.SCHEDULED, scoreA = 0, scoreB = 0) else it
+    })
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - live match, hosting")
+@Composable
+private fun PreviewHubLive() {
+    HoopsTheme {
+        TournamentContent(previewActive.copy(roomCode = "K7M2QX"), {}, {}, {}, { _, _ -> }, readOnly = false)
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - up next")
+@Composable
+private fun PreviewHubUpNext() {
+    HoopsTheme { TournamentContent(previewUpNext, {}, {}, {}, { _, _ -> }, readOnly = false) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - viewer (read-only)")
+@Composable
+private fun PreviewHubViewer() {
+    HoopsTheme { TournamentContent(previewActive, {}, {}, {}, { _, _ -> }, readOnly = true) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - completed")
+@Composable
+private fun PreviewHubCompleted() {
+    HoopsTheme {
+        TournamentContent(previewActive.copy(status = TStatus.COMPLETED, championId = "a"), {}, {}, {}, { _, _ -> }, readOnly = false)
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - schedule over plan")
+@Composable
+private fun PreviewHubOverPlan() {
+    HoopsTheme {
+        TournamentContent(
+            previewUpNext.copy(endAt = previewUpNext.startAt + 90 * 60_000L), {}, {}, {}, { _, _ -> }, readOnly = false
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Tab - Standings")
+@Composable
+private fun PreviewStandingsTab() {
+    HoopsTheme { TournamentContent(previewActive, {}, {}, {}, { _, _ -> }, readOnly = false, initialTab = 1) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Tab - Teams")
+@Composable
+private fun PreviewTeamsTab() {
+    HoopsTheme { TournamentContent(previewActive, {}, {}, {}, { _, _ -> }, readOnly = false, initialTab = 2) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Tab - Stats")
+@Composable
+private fun PreviewStatsTab() {
+    HoopsTheme { TournamentContent(previewActive, {}, {}, {}, { _, _ -> }, readOnly = false, initialTab = 3) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Fixtures")
+@Composable
+private fun PreviewFixtures() {
+    HoopsTheme { FixturesContent(previewActive, onBack = {}, onOpenMatch = { _, _ -> }, readOnly = false, onReorder = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Reorder matches")
+@Composable
+private fun PreviewReorder() {
+    HoopsTheme { ReorderFixturesContent(previewActive, onBack = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Match ready")
+@Composable
+private fun PreviewMatchReadyScreen() {
+    HoopsTheme {
+        val next = previewActive.matches.first { it.status == MatchStatus.SCHEDULED }
+        MatchReadyContent(previewActive, next, onBack = {}, onChangeFormat = {}, onStarted = {})
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, name = "Match cards")
+@Composable
+private fun PreviewMatchCards() {
+    HoopsTheme {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            previewActive.matches.take(3).forEach { MatchCard(previewActive, it, { _, _ -> }) }
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, name = "Small pieces")
+@Composable
+private fun PreviewSmallPieces() {
+    HoopsTheme {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SharePill {}
+            LiveHostingRow("K7M2QX") {}
+            PastPlanRow(onFix = {})
+            Box(Modifier.background(Navy).padding(8.dp)) { PastPlanRow(onFix = {}, dark = true) }
+            Tile(Icons.Filled.Groups, "Teams & players", "4 teams · 12 players", Modifier.fillMaxWidth()) {}
         }
     }
 }

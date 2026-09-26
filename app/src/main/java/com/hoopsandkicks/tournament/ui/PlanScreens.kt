@@ -26,6 +26,8 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SportsBasketball
 import androidx.compose.material.icons.filled.SportsSoccer
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,22 +40,32 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hoopsandkicks.tournament.HoopsApp
 import com.hoopsandkicks.tournament.data.Algorithm
 import com.hoopsandkicks.tournament.data.FormatType
 import com.hoopsandkicks.tournament.data.GameFormat
+import com.hoopsandkicks.tournament.data.Player
 import com.hoopsandkicks.tournament.data.Scheduler
 import com.hoopsandkicks.tournament.data.Sport
+import com.hoopsandkicks.tournament.data.Team
 import com.hoopsandkicks.tournament.data.TStatus
 import com.hoopsandkicks.tournament.data.Tournament
 
 // ======================= SCHEDULE ALGORITHM =======================
 
+private typealias PlanMutate = ((Tournament) -> Tournament) -> Unit
+
 @Composable
 fun AlgorithmScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
     val t = observeTournament(id) ?: return
+    AlgorithmContent(t, { change -> HoopsApp.repo.mutate(id, change) }, onBack, onNext)
+}
+
+@Composable
+private fun AlgorithmContent(t: Tournament, mutate: PlanMutate, onBack: () -> Unit, onNext: () -> Unit) {
     Screen {
         TopBar("Match schedule", onBack)
         StepBar(5, "Pick an algorithm")
@@ -68,7 +80,7 @@ fun AlgorithmScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
                         .clip(RoundedCornerShape(18.dp))
                         .background(if (on) AccentSoft else Surface)
                         .border(BorderStroke(if (on) 2.dp else 1.dp, if (on) Accent else Line), RoundedCornerShape(18.dp))
-                        .clickable { HoopsApp.repo.mutate(id) { it.copy(algorithm = algo) } }
+                        .clickable { mutate { it.copy(algorithm = algo) } }
                         .padding(14.dp)
                 ) {
                     Row(verticalAlignment = Alignment.Top) {
@@ -89,6 +101,25 @@ fun AlgorithmScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
                             HText(algo.blurb, 13.sp, FontWeight.Normal, Mute)
                         }
                     }
+                    if (on && algo == Algorithm.ROUND_ROBIN) {
+                        val semisOn = Scheduler.rrSemisOn(t)
+                        val finalOn = Scheduler.rrFinalOn(t)
+                        Spacer(Modifier.height(8.dp))
+                        CheckRow(
+                            "Semi-finals for the top 4", semisOn, t.teams.size > 4,
+                            if (t.teams.size > 4) "1st vs 4th, 2nd vs 3rd" else "Needs more than 4 teams"
+                        ) { mutate { it.copy(rrSemis = !semisOn, rrFinal = it.rrFinal || !semisOn) } }
+                        CheckRow(
+                            "Final", finalOn, t.teams.size > 2 && !semisOn,
+                            when {
+                                t.teams.size <= 2 -> "Needs more than 2 teams"
+                                semisOn -> "Always played after semi-finals"
+                                else -> "Top 2 meet for the title"
+                            }
+                        ) { mutate { it.copy(rrFinal = !finalOn) } }
+                        Spacer(Modifier.height(6.dp))
+                        HText(Scheduler.expectedStages(t).joinToString(" → "), 12.sp, FontWeight.Normal, Mute)
+                    }
                     if (on && algo == Algorithm.GROUP_KO) {
                         Spacer(Modifier.height(12.dp))
                         val g = t.groups.coerceIn(1, t.maxGroups())
@@ -96,14 +127,14 @@ fun AlgorithmScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
                         val adv = Scheduler.clampedAdvance(t)
                         StepperRow(
                             "Groups", g.toString(), "",
-                            { if (g > 1) HoopsApp.repo.mutate(id) { it.copy(groups = g - 1) } },
-                            { if (g < t.maxGroups()) HoopsApp.repo.mutate(id) { it.copy(groups = g + 1) } },
+                            { if (g > 1) mutate { it.copy(groups = g - 1) } },
+                            { if (g < t.maxGroups()) mutate { it.copy(groups = g + 1) } },
                             card = false
                         )
                         StepperRow(
                             "Advance per group", adv.toString(), "",
-                            { if (adv > 1) HoopsApp.repo.mutate(id) { it.copy(advance = adv - 1) } },
-                            { if (adv < minSize) HoopsApp.repo.mutate(id) { it.copy(advance = adv + 1) } },
+                            { if (adv > 1) mutate { it.copy(advance = adv - 1) } },
+                            { if (adv < minSize) mutate { it.copy(advance = adv + 1) } },
                             card = false
                         )
                         Spacer(Modifier.height(6.dp))
@@ -118,9 +149,24 @@ fun AlgorithmScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
         }
         BottomBar {
             PrimaryButton("Continue: game format", {
-                HoopsApp.repo.mutate(id) { it.copy(draftStep = maxOf(it.draftStep, 5)) }
+                mutate { it.copy(draftStep = maxOf(it.draftStep, 5)) }
                 onNext()
             }, icon = Icons.Filled.CalendarMonth)
+        }
+    }
+}
+
+@Composable
+private fun CheckRow(label: String, checked: Boolean, enabled: Boolean, sub: String, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onToggle),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled, colors = CheckboxDefaults.colors(checkedColor = Accent))
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.padding(vertical = 6.dp)) {
+            HText(label, 14.sp, FontWeight.Bold, if (enabled) Ink else Mute)
+            HText(sub, 12.sp, FontWeight.Normal, Mute)
         }
     }
 }
@@ -138,7 +184,12 @@ private fun initialSchedule(t: Tournament): Tournament {
 @Composable
 fun GameFormatScreen(id: String, wizard: Boolean, onBack: () -> Unit, onDone: () -> Unit) {
     val t = observeTournament(id) ?: return
-    var f by remember(t.id) { mutableStateOf(t.format) }
+    GameFormatContent(t, wizard, { change -> HoopsApp.repo.mutate(id, change) }, onBack, onDone)
+}
+
+@Composable
+private fun GameFormatContent(t: Tournament, wizard: Boolean, mutate: PlanMutate, onBack: () -> Unit, onDone: () -> Unit) {
+    var f by remember(t.id) { mutableStateOf(t.format.copy(breakMin = t.format.breakMin.coerceAtLeast(1))) }
     val creating = wizard && t.matches.isEmpty()
     // A draft can come back here with fewer than 2 teams (e.g. teams deleted after this step was reached, then the
     // draft reopened, which resumes at this step): there's nothing to schedule, so don't project, and don't finish.
@@ -157,6 +208,7 @@ fun GameFormatScreen(id: String, wizard: Boolean, onBack: () -> Unit, onDone: ()
     val fits = projected == null || Scheduler.fits(projected)
     val overrun = if (projected == null) 0L else Scheduler.scheduleOverrunMinutes(projected)
     val canSave = fits && (enoughTeams || !creating)
+    val hasSemis = Scheduler.roundName(4) in Scheduler.expectedStages(t)
 
     Screen {
         TopBar("Game format", onBack)
@@ -228,6 +280,17 @@ fun GameFormatScreen(id: String, wizard: Boolean, onBack: () -> Unit, onDone: ()
                     HText("Every goal is worth 1 point.", 13.sp, FontWeight.Medium, Mute)
                     Divider1()
                 }
+                // Only offered when this tournament actually draws a semi-final round.
+                if (hasSemis) {
+                    SwitchRow("Different length for Semi-finals", f.semisDifferent) { f = f.copy(semisDifferent = it) }
+                    if (f.semisDifferent) {
+                        StepperRow(
+                            if (f.type == FormatType.HALVES) "Semi-finals half length" else "Semi-finals game length", f.semisPeriodMin.toString(), "min",
+                            { if (f.semisPeriodMin > 1) f = f.copy(semisPeriodMin = f.semisPeriodMin - 1) },
+                            { if (f.semisPeriodMin < 90) f = f.copy(semisPeriodMin = f.semisPeriodMin + 1) }, card = false
+                        )
+                    }
+                }
                 SwitchRow("Different length for Finals", f.finalsDifferent) { f = f.copy(finalsDifferent = it) }
                 if (f.finalsDifferent) {
                     StepperRow(
@@ -266,7 +329,7 @@ fun GameFormatScreen(id: String, wizard: Boolean, onBack: () -> Unit, onDone: ()
             else if (!fits) HText("Fix the schedule above to ${if (creating) "finish" else "save"}: it runs $overrun min past the end time.", 12.sp, FontWeight.Medium, Accent)
             PrimaryButton(if (wizard) "Save & finish" else "Save format", {
                 var done = true
-                HoopsApp.repo.mutate(id) { tt ->
+                mutate { tt ->
                     var n = tt.copy(format = f, draftStep = 6)
                     if (wizard && tt.matches.isEmpty()) {
                         if (tt.teams.size < 2) {
@@ -312,5 +375,120 @@ private fun FormatCard(title: String, blurb: String, icon: ImageVector, on: Bool
         Spacer(Modifier.height(8.dp))
         HText(title, 15.sp, FontWeight.Bold)
         HText(blurb, 12.sp, FontWeight.Normal, Mute)
+    }
+}
+
+// ─── Previews ───────────────────────────────────────────────────────────
+// These call the private *Content functions with a sample 6-team draft. Taps in a preview change nothing.
+
+private val previewPlanTournament: Tournament by lazy {
+    val start = 1_750_000_000_000L
+    val positions = listOf("Guard", "Forward", "Center")
+    val players = (1..18).map { Player("p$it", "Player $it", positions[it % 3], (it % 5) + 1) }
+    val names = listOf("Red Hawks", "Blue Jays", "Green Mambas", "Gold Kings", "Night Owls", "Iron Wolves")
+    val teams = names.mapIndexed { i, n -> Team("t$i", n, i, players.subList(i * 3, i * 3 + 3).map { it.id }) }
+    Tournament(
+        id = "preview", name = "City Cup", startAt = start, endAt = start + 6 * 3_600_000L, courts = 2,
+        playerTarget = 18, teamTarget = 6, players = players, teams = teams,
+        algorithm = Algorithm.GROUP_KO, groups = 2, advance = 2, status = TStatus.DRAFT, draftStep = 5, createdAt = start
+    )
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - group + knockout")
+@Composable
+private fun PreviewAlgorithm() {
+    HoopsTheme { AlgorithmContent(previewPlanTournament, mutate = {}, onBack = {}, onNext = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - round robin, nothing ticked")
+@Composable
+private fun PreviewAlgorithmRoundRobin() {
+    HoopsTheme {
+        AlgorithmContent(previewPlanTournament.copy(algorithm = Algorithm.ROUND_ROBIN), mutate = {}, onBack = {}, onNext = {})
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - round robin, semis + final")
+@Composable
+private fun PreviewAlgorithmRoundRobinSemis() {
+    HoopsTheme {
+        AlgorithmContent(previewPlanTournament.copy(algorithm = Algorithm.ROUND_ROBIN, rrSemis = true), mutate = {}, onBack = {}, onNext = {})
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - round robin, final only")
+@Composable
+private fun PreviewAlgorithmRoundRobinFinal() {
+    HoopsTheme {
+        AlgorithmContent(previewPlanTournament.copy(algorithm = Algorithm.ROUND_ROBIN, rrFinal = true), mutate = {}, onBack = {}, onNext = {})
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - round robin, 4 teams (semis off)")
+@Composable
+private fun PreviewAlgorithmRoundRobinFourTeams() {
+    val t = previewPlanTournament
+    HoopsTheme {
+        AlgorithmContent(
+            t.copy(algorithm = Algorithm.ROUND_ROBIN, teams = t.teams.take(4), rrSemis = true, rrFinal = true),
+            mutate = {}, onBack = {}, onNext = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - round robin, 2 teams (both off)")
+@Composable
+private fun PreviewAlgorithmRoundRobinTwoTeams() {
+    val t = previewPlanTournament
+    HoopsTheme {
+        AlgorithmContent(
+            t.copy(algorithm = Algorithm.ROUND_ROBIN, teams = t.teams.take(2), rrSemis = true, rrFinal = true),
+            mutate = {}, onBack = {}, onNext = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 900, name = "Game format - basketball")
+@Composable
+private fun PreviewGameFormat() {
+    HoopsTheme { GameFormatContent(previewPlanTournament, wizard = true, mutate = {}, onBack = {}, onDone = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 900, name = "Game format - football, halves")
+@Composable
+private fun PreviewGameFormatFootball() {
+    val t = previewPlanTournament
+    HoopsTheme {
+        GameFormatContent(
+            t.copy(sport = Sport.FOOTBALL, format = t.format.copy(type = FormatType.HALVES, finalsDifferent = true, semisDifferent = true)),
+            wizard = false, mutate = {}, onBack = {}, onDone = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 900, name = "Game format - doesn't fit")
+@Composable
+private fun PreviewGameFormatOverrun() {
+    val t = previewPlanTournament
+    HoopsTheme { GameFormatContent(t.copy(endAt = t.startAt + 45 * 60_000L), wizard = true, mutate = {}, onBack = {}, onDone = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 900, name = "Game format - no semi-finals option")
+@Composable
+private fun PreviewGameFormatNoSemis() {
+    HoopsTheme {
+        GameFormatContent(previewPlanTournament.copy(algorithm = Algorithm.ROUND_ROBIN), wizard = true, mutate = {}, onBack = {}, onDone = {})
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 1000, name = "Game format - different semis + finals length")
+@Composable
+private fun PreviewGameFormatSemisFinalsLength() {
+    val t = previewPlanTournament
+    HoopsTheme {
+        GameFormatContent(
+            t.copy(format = t.format.copy(semisDifferent = true, semisPeriodMin = 14, finalsDifferent = true, finalsPeriodMin = 16)),
+            wizard = true, mutate = {}, onBack = {}, onDone = {}
+        )
     }
 }

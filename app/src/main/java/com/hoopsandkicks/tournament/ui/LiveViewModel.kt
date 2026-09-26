@@ -55,7 +55,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
     private fun tournament(): Tournament? = repo.get(tid)
     private fun match(): Match? = tournament()?.match(mid)
 
-    private fun fmt(t: Tournament, m: Match): GameFormat = t.format.forMatch(m.isFinal)
+    private fun fmt(t: Tournament, m: Match): GameFormat = t.format.forMatch(m)
 
     /** Appends one event to this match's log (see MatchLog.append). */
     private fun Match.logged(

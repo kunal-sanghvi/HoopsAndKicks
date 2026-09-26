@@ -107,6 +107,12 @@ object Scheduler {
         return adv
     }
 
+    /** Round Robin semi-finals (top 4) are on: chosen, and enough teams for them. */
+    fun rrSemisOn(t: Tournament): Boolean = t.rrSemis && t.teams.size > 4
+
+    /** Round Robin final is on: chosen (or implied by semi-finals, which need a final to name a champion) with 3+ teams. */
+    fun rrFinalOn(t: Tournament): Boolean = t.teams.size > 2 && (t.rrFinal || rrSemisOn(t))
+
     /** First knockout round for [seeds]; empty when there are fewer than 2 (no bracket to draw, like [roundRobinRounds]). */
     private fun firstRound(seeds: List<String>, stageIndex: Int): List<Match> {
         // With 0 or 1 seeds the bracket would have size 1, and pairing order[i] with order[i + 1] runs off the end.
@@ -265,9 +271,11 @@ object Scheduler {
                 listOf("Group Stage") + koNames(q)
             }
             Algorithm.SINGLE_ELIM -> koNames(ids)
-            // With more than 2 teams the top 2 by standings meet in an extra Final after the round robin;
-            // with only 2 teams that single round-robin match already is the decider.
-            Algorithm.ROUND_ROBIN -> if (ids > 2) listOf("Round Robin", "Final") else listOf("Round Robin")
+            // Semi-finals (top 4) and the Final (top 2 / semi winners) are optional; without them the round-robin
+            // standings decide the champion.
+            Algorithm.ROUND_ROBIN ->
+                listOf("Round Robin") + (if (rrSemisOn(t)) listOf(roundName(4)) else emptyList()) +
+                    (if (rrFinalOn(t)) listOf(roundName(2)) else emptyList())
             Algorithm.DOUBLE_ELIM -> listOf("Double Elimination")
             Algorithm.SWISS -> listOf("Swiss")
         }
@@ -298,7 +306,7 @@ object Scheduler {
     // ---------- time/court slotting ----------
 
     private fun durationMs(t: Tournament, m: Match): Long =
-        (t.format.forMatch(m.isFinal).estimatedDurationMin() + t.matchBufferMin.coerceAtLeast(0)) * 60_000L
+        (t.format.forMatch(m).estimatedDurationMin() + t.matchBufferMin.coerceAtLeast(0)) * 60_000L
 
     /**
      * Matches sharing a key form one "stage" for slotting: nothing in a later stage may start before every
@@ -480,11 +488,30 @@ object Scheduler {
                     if (final.status != MatchStatus.FINISHED) return null
                     return complete(t, final.winnerId)
                 }
+                val ls = ms.maxOf { it.stageIndex }
+                val semis = ms.filter { it.stageType == StageType.KNOCKOUT && it.stage == roundName(4) }
+                if (semis.isNotEmpty()) {
+                    if (semis.any { it.status != MatchStatus.FINISHED }) return null
+                    val winners = semis.sortedBy { it.number }.mapNotNull { it.winnerId }
+                    if (winners.size < 2) return complete(t, winners.firstOrNull())
+                    return addMatches(
+                        t,
+                        listOf(mk(ls + 1, "Final", StageType.LEAGUE, "", 1, "Final", winners[0], winners[1], isFinal = true))
+                    )
+                }
                 if (ms.all { it.status == MatchStatus.FINISHED }) {
                     val top = Standings.compute(ids, ms).map { it.teamId }
-                    // Only 2 teams: the single round-robin match they already played is the decider.
-                    if (ids.size <= 2 || top.size < 2) return complete(t, top.firstOrNull())
-                    val ls = ms.maxOf { it.stageIndex }
+                    if (rrSemisOn(t) && top.size >= 4) {
+                        return addMatches(
+                            t,
+                            listOf(
+                                mk(ls + 1, roundName(4), StageType.KNOCKOUT, "", 1, koLabel(4, 1), top[0], top[3]),
+                                mk(ls + 1, roundName(4), StageType.KNOCKOUT, "", 1, koLabel(4, 2), top[1], top[2])
+                            )
+                        )
+                    }
+                    // No final (or only 2 teams, where the single match is the decider): standings decide.
+                    if (!rrFinalOn(t) || top.size < 2) return complete(t, top.firstOrNull())
                     return addMatches(
                         t,
                         listOf(mk(ls + 1, "Final", StageType.LEAGUE, "", 1, "Final", top[0], top[1], isFinal = true))

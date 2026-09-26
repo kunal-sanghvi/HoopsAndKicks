@@ -116,7 +116,7 @@ fun MatchRoute(tid: String, mid: String, onExit: () -> Unit) {
 
 @Composable
 private fun LiveContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: () -> Unit) {
-    val f = t.format.forMatch(m.isFinal)
+    val f = t.format.forMatch(m)
     val halves = f.type == FormatType.HALVES
     var showExit by remember { mutableStateOf(false) }
     var showEnd by remember { mutableStateOf(false) }
