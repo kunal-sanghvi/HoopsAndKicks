@@ -1,0 +1,32 @@
+rules_version = '2';
+
+// Security rules for optional live hosting (paste into Firebase console > Firestore > Rules).
+// Anyone with a room code can read; only the host (anonymous uid stored as hostUid) can write,
+// and match events are create-only so the log stays append-only.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /rooms/{code} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+                    && request.resource.data.hostUid == request.auth.uid;
+
+      allow update: if request.auth != null
+                    && resource.data.hostUid == request.auth.uid
+                    && request.resource.data.hostUid == request.auth.uid;
+
+      allow delete: if request.auth != null
+                    && resource.data.hostUid == request.auth.uid;
+
+      match /matches/{matchId}/events/{eventId} {
+        allow read: if true;
+
+        allow create: if request.auth != null
+                      && get(/databases/$(database)/documents/rooms/$(code)).data.hostUid == request.auth.uid;
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}
