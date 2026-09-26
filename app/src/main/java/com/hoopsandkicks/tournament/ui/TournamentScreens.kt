@@ -774,7 +774,7 @@ fun ReorderFixturesScreen(id: String, onBack: () -> Unit) {
         TopBar("Reorder matches", onBack)
         HText(
             "Drag to change the order — times update on their own", 12.sp, FontWeight.Medium, Mute,
-            Modifier.padding(horizontal = 20.dp, bottom = 8.dp)
+            Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp)
         )
         if (courts.size > 1) {
             Row(
