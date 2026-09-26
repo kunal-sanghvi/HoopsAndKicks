@@ -50,6 +50,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -442,3 +443,114 @@ fun formatClock(ms: Long): String {
 }
 
 fun formatSeconds(sec: Int): String = "%02d:%02d".format(sec / 60, sec % 60)
+
+// ─── Previews ───────────────────────────────────────────────────────────
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE)
+@Composable
+private fun PreviewTextComponents() {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        HText("Regular Text", size = 14.sp)
+        HText("Bold Text", size = 16.sp, weight = FontWeight.Bold)
+        DisplayText("42", size = 32.sp)
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE)
+@Composable
+private fun PreviewButtons() {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        HoopsTheme {
+            PrimaryButton("Start Match", onClick = {})
+            PrimaryButton("Disabled Button", onClick = {}, enabled = false)
+            SecondaryButton("Cancel", onClick = {})
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE)
+@Composable
+private fun PreviewPeriodBadge() {
+    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        PeriodBadge("1")
+        PeriodBadge("2")
+        PeriodBadge("OT", dark = false)
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE)
+@Composable
+private fun PreviewChipsBadgesDots() {
+    HoopsTheme {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("All", selected = true, onClick = {})
+                Chip("Court 1", selected = false, onClick = {})
+                Chip("Court 2", selected = false, onClick = {})
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Badge("LIVE")
+                Badge("FINAL", bg = GreenSoft, fg = Green)
+                Dot(teamColor(0))
+                Dot(teamColor(1))
+            }
+            TeamPill("Red Hawks", teamColor(0))
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE)
+@Composable
+private fun PreviewIconCircles() {
+    HoopsTheme {
+        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            IconCircle(Icons.Filled.Add, "Add", onClick = {})
+            IconCircle(Icons.Filled.Star, "Star", onClick = {})
+            Box(Modifier.background(Navy).padding(4.dp)) {
+                IconCircle(Icons.Filled.Remove, "Remove", onClick = {}, dark = true)
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE)
+@Composable
+private fun PreviewCardAndTopBar() {
+    HoopsTheme {
+        Column {
+            TopBar("Standings", onBack = {})
+            StepBar(step = 2, label = "Teams")
+            HCard(Modifier.padding(horizontal = 20.dp)) {
+                HText("Card title", 16.sp, FontWeight.Bold)
+                Divider1()
+                HText("Content inside a card", 14.sp, color = Mute)
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE)
+@Composable
+private fun PreviewFormControls() {
+    HoopsTheme {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LabeledField("Team name", "Red Hawks", onChange = {})
+            StepperRow("Game length", "10", "min", onMinus = {}, onPlus = {}, hint = "Per half")
+            HCard { SwitchRow("Use shot clock", checked = true, onChange = {}) }
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE)
+@Composable
+private fun PreviewNavBarAndBottomBar() {
+    HoopsTheme {
+        Column {
+            BottomBar {
+                PrimaryButton("Save & next", onClick = {})
+                SecondaryButton("Edit scores", onClick = {}, Modifier.fillMaxWidth())
+            }
+            NavBar(active = 0, onSelect = {})
+        }
+    }
+}

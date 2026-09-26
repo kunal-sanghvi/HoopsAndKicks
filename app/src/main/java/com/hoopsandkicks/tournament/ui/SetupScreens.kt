@@ -78,6 +78,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -951,4 +952,73 @@ fun SplitScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
 /** Removes a player from whichever team holds them (they then show in the unassigned pool). */
 private fun apply2(id: String, playerId: String) {
     HoopsApp.repo.mutate(id) { tt -> tt.copy(teams = tt.teams.map { it.copy(playerIds = it.playerIds.filter { x -> x != playerId }) }) }
+}
+
+// ─── Previews ───────────────────────────────────────────────────────────
+// HomeScreen, CreateTournamentScreen, PlayersScreen, TeamsScreen and SplitScreen read the real
+// database (HoopsApp.repo), which doesn't exist inside the Design tab, so only the pieces that take
+// plain data can be previewed here.
+
+private val previewPlayers = listOf(
+    Player("p1", "Alex", "Guard", 4), Player("p2", "Sam", "Forward", 3),
+    Player("p3", "Jordan", "Center", 5), Player("p4", "Riley", "Guard", 2)
+)
+
+private val previewTeams = listOf(
+    Team("t1", "Red Hawks", 0, listOf("p1", "p2")),
+    Team("t2", "Blue Jays", 1, listOf("p3", "p4"))
+)
+
+private val previewDraft = Tournament(
+    id = "draft", name = "Summer Hoops", players = previewPlayers, playerTarget = 8,
+    status = TStatus.DRAFT, sport = Sport.BASKETBALL
+)
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, name = "Join screen")
+@Composable
+private fun PreviewJoinTournamentScreen() {
+    HoopsTheme { JoinTournamentScreen(onBack = {}, onJoin = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, name = "Home join buttons")
+@Composable
+private fun PreviewHomeJoinRows() {
+    HoopsTheme {
+        Column {
+            JoinByCodeButton(onClick = {})
+            ResumeWatchingRow("K7M2QX", onClick = {}, onJoinDifferent = {})
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, name = "Tournament cards")
+@Composable
+private fun PreviewTournamentCards() {
+    HoopsTheme {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            TournamentCard(previewDraft, onClick = {})
+            TournamentCard(
+                previewDraft.copy(name = "City Cup", status = TStatus.ACTIVE, teams = previewTeams),
+                onClick = {}
+            )
+            TournamentCard(
+                previewDraft.copy(name = "Spring Kicks", sport = Sport.FOOTBALL, status = TStatus.COMPLETED,
+                    teams = previewTeams, championId = "t1"),
+                onClick = {}
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, name = "Date row and skill dots")
+@Composable
+private fun PreviewDateRowAndSkillDots() {
+    HoopsTheme {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            DateTimeRow("Starts", 0L, "Pick a start time", onClick = {})
+            DateTimeRow("Ends", 1_750_000_000_000L, "Pick an end time", onClick = {})
+            SkillDots(value = 3, onChange = {})
+            SkillDots(value = 5, small = true, onChange = {})
+        }
+    }
 }

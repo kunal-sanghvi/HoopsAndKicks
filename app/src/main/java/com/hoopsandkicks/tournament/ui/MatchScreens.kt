@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
@@ -706,6 +707,35 @@ private fun SummaryContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: (
             PrimaryButton("Save & next match", onExit, icon = Icons.Filled.ChevronRight)
             if (vm.canReopen()) {
                 SecondaryButton("Edit scores", { vm.reopen() }, Modifier.fillMaxWidth(), icon = Icons.Filled.Edit)
+            }
+        }
+    }
+}
+
+// ─── Previews ───────────────────────────────────────────────────────────
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = 412, heightDp = 800)
+@Composable
+private fun PreviewMatchReady() {
+    HoopsTheme {
+        Screen(Navy) {
+            Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Spacer(Modifier.weight(1f))
+                HText("READY TO PLAY", 14.sp, FontWeight.Bold, AccentDark)
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        HText("TEAM A", 14.sp, FontWeight.Bold, MuteDark)
+                        DisplayText("7", 72.sp, OnDark)
+                    }
+                    HText("–", 28.sp, FontWeight.Medium, MuteDark)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        HText("TEAM B", 14.sp, FontWeight.Bold, MuteDark)
+                        DisplayText("5", 72.sp, OnDark)
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                PrimaryButton("Start Match", {}, color = AccentDark)
             }
         }
     }
