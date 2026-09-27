@@ -1,6 +1,8 @@
 package com.hoopsandkicks.tournament
 
 import com.hoopsandkicks.tournament.data.*
+import com.hoopsandkicks.tournament.ui.previewMatchIn
+import com.hoopsandkicks.tournament.ui.previewViewerIn
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -122,5 +124,89 @@ class PointsTest {
         assertEquals(listOf("Group Stage", "Semi-finals"), stages(com.hoopsandkicks.tournament.ui.previewGroupKo))
         assertTrue(com.hoopsandkicks.tournament.ui.previewActive.matches.any { it.isDraw })
         assertEquals(listOf("Quarter-finals", "Semi-finals"), stages(com.hoopsandkicks.tournament.ui.previewSingleElim))
+    }
+
+    @Test fun previewMatchSamplesBuildForEveryScreenState() {
+        fun match(s: MatchStatus, level: Boolean = false, n: Int = 0) = com.hoopsandkicks.tournament.ui.previewMatchIn(s, level, n).second
+        assertEquals(10, match(MatchStatus.LIVE).scoreA)
+        assertEquals(7, match(MatchStatus.LIVE).scoreB)
+        assertTrue(match(MatchStatus.FINISHED, level = true).isDraw)
+        assertFalse(match(MatchStatus.FINISHED).isDraw)
+        val tie = com.hoopsandkicks.tournament.ui.previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 3)
+        val so = tie.second.shootout(tie.first.sport)
+        assertEquals(2, so.attemptsA.size)
+        assertEquals(1, so.attemptsB.size)
+        assertFalse(tie.second.awardsPoints)
+    }
+
+    @Test fun previewMatchVariantsCoverTheAdminScreenConditions() {
+        val fresh = previewMatchIn(MatchStatus.LIVE, scored = false).second
+        assertTrue(fresh.events.isEmpty())
+        assertEquals(0, fresh.scoreA + fresh.scoreB)
+
+        val (ft, fm) = previewMatchIn(MatchStatus.LIVE, sport = Sport.FOOTBALL)
+        assertEquals(Sport.FOOTBALL, ft.sport)
+        assertEquals(listOf(1), ft.format.forMatch(fm).pointOptions())
+        assertEquals(4, fm.scoreA)
+        assertEquals(3, fm.scoreB)
+
+        val cont = previewMatchIn(MatchStatus.LIVE, format = GameFormat(type = FormatType.CONTINUOUS, periodMin = 20, allow1 = false)).first
+        assertEquals(listOf(2, 3), cont.format.pointOptions())
+        assertEquals(1, cont.format.periods())
+
+        val (rt, rm) = previewMatchIn(MatchStatus.LIVE, rosterlessB = true)
+        assertTrue(rt.team(rm.teamBId)!!.playerIds.isEmpty())
+        assertTrue(rm.lineupB.isEmpty())
+        assertTrue(rm.events.filter { it.teamId == rm.teamBId }.all { it.playerId == null })
+
+        val (wt, wm) = previewMatchIn(MatchStatus.LIVE, wholeRosterOn = true)
+        assertEquals(wt.team(wm.teamAId)!!.playerIds, wm.lineupA)
+
+        assertFalse(previewMatchIn(MatchStatus.LIVE, level = true, knockout = true).second.awardsPoints)
+
+        val (st, sm) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 6)
+        val sudden = sm.shootout(st.sport)
+        assertTrue(sudden.suddenDeath)
+        assertFalse(sudden.decided)
+
+        val (nt, nm) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 1, rosterlessB = true)
+        val next = nm.shootout(nt.sport)
+        assertFalse(next.nextIsA)
+        assertTrue(nt.team(nm.teamBId)!!.playerIds.isEmpty())
+
+        val (gt, gm) = previewMatchIn(MatchStatus.TIEBREAK, level = true, sport = Sport.FOOTBALL, scored = false)
+        assertTrue(gm.events.isEmpty() && gm.shootout(gt.sport).all.isEmpty())
+
+        val won = previewMatchIn(MatchStatus.FINISHED, level = true, knockout = true).second
+        assertEquals(won.teamAId, won.winnerId)
+        assertFalse(won.isDraw)
+        assertTrue(won.tieNote.startsWith("Won"))
+
+        val goalless = previewMatchIn(MatchStatus.FINISHED, level = true, knockout = true, sport = Sport.FOOTBALL, scored = false).second
+        assertEquals(0, goalless.scoreA + goalless.scoreB)
+        assertEquals(goalless.teamAId, goalless.winnerId)
+        assertTrue(goalless.tieNote.contains("free kicks"))
+    }
+
+    @Test fun previewViewerSamplesPutTheLiveMatchInEachPhase() {
+        fun live(t: Tournament) = t.realMatches().single {
+            it.status == MatchStatus.LIVE || it.status == MatchStatus.BREAK || it.status == MatchStatus.TIEBREAK
+        }
+        val running = previewViewerIn(MatchStatus.LIVE, running = true)
+        assertTrue(live(running).clockRunning)
+        assertTrue(running.roomCode != null)
+        assertFalse(live(previewViewerIn(MatchStatus.LIVE)).clockRunning)
+        val halftime = live(previewViewerIn(MatchStatus.BREAK, running = true))
+        assertEquals(MatchStatus.BREAK, halftime.status)
+        assertTrue(halftime.breakRemainingSec > 0)
+        val tie = previewViewerIn(MatchStatus.TIEBREAK, shootoutAttempts = 3)
+        assertEquals(3, live(tie).shootout(tie.sport).all.size)
+
+        val overPlan = com.hoopsandkicks.tournament.ui.previewOverPlan
+        val upNext = overPlan.realMatches().filter { it.status == MatchStatus.SCHEDULED }.minByOrNull { it.number }!!
+        assertTrue(upNext.exceedsWindow(overPlan))
+        assertTrue(Scheduler.projectedOverrunMinutes(overPlan) > 0L)
+        assertFalse(com.hoopsandkicks.tournament.ui.previewNotStarted.anyStarted())
+        assertEquals(listOf("Semi-finals"), com.hoopsandkicks.tournament.ui.previewKnockout.matches.map { it.stage }.distinct())
     }
 }

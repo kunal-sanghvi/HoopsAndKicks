@@ -65,6 +65,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.hoopsandkicks.tournament.data.FormatType
+import com.hoopsandkicks.tournament.data.GameFormat
 import com.hoopsandkicks.tournament.data.Match
 import com.hoopsandkicks.tournament.data.MatchEventType
 import com.hoopsandkicks.tournament.data.MatchStatus
@@ -111,12 +112,14 @@ fun MatchRoute(tid: String, mid: String, onExit: () -> Unit) {
 
 // ======================= LIVE =======================
 
+private enum class LiveDialog { Exit, End }
+
 @Composable
-private fun LiveContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: () -> Unit) {
+private fun LiveContent(t: Tournament, m: Match, vm: LiveController, onExit: () -> Unit, initialDialog: LiveDialog? = null) {
     val f = t.format.forMatch(m)
     val halves = f.type == FormatType.HALVES
-    var showExit by remember { mutableStateOf(false) }
-    var showEnd by remember { mutableStateOf(false) }
+    var showExit by remember { mutableStateOf(initialDialog == LiveDialog.Exit) }
+    var showEnd by remember { mutableStateOf(initialDialog == LiveDialog.End) }
     var menu by remember { mutableStateOf(false) }
     BackHandler { showExit = true }
 
@@ -240,7 +243,7 @@ private fun LiveContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: () -
 }
 
 @Composable
-private fun TeamScorePanel(t: Tournament, m: Match, isA: Boolean, options: List<Int>, vm: LiveViewModel, modifier: Modifier, locked: Boolean) {
+private fun TeamScorePanel(t: Tournament, m: Match, isA: Boolean, options: List<Int>, vm: LiveController, modifier: Modifier, locked: Boolean) {
     val teamId = if (isA) m.teamAId else m.teamBId
     val color = teamColorOf(t, teamId)
     val score = if (isA) m.scoreA else m.scoreB
@@ -287,7 +290,7 @@ private fun TeamScorePanel(t: Tournament, m: Match, isA: Boolean, options: List<
 }
 
 @Composable
-private fun ScorerSheet(t: Tournament, m: Match, forA: Boolean, points: Int, vm: LiveViewModel) {
+private fun ScorerSheet(t: Tournament, m: Match, forA: Boolean, points: Int, vm: LiveController) {
     val teamId = if (forA) m.teamAId else m.teamBId
     val team = t.team(teamId)
     val color = teamColorOf(t, teamId)
@@ -344,7 +347,7 @@ private fun ScorerSheet(t: Tournament, m: Match, forA: Boolean, points: Int, vm:
 // ======================= SUBSTITUTION SHEET =======================
 
 @Composable
-private fun SubSheet(t: Tournament, m: Match, forA: Boolean, vm: LiveViewModel) {
+private fun SubSheet(t: Tournament, m: Match, forA: Boolean, vm: LiveController) {
     val teamId = if (forA) m.teamAId else m.teamBId
     val color = teamColorOf(t, teamId)
     val lineup = if (forA) m.lineupA else m.lineupB
@@ -414,7 +417,7 @@ private fun SubSheet(t: Tournament, m: Match, forA: Boolean, vm: LiveViewModel) 
 // ======================= HALFTIME =======================
 
 @Composable
-private fun HalftimeContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: () -> Unit) {
+private fun HalftimeContent(t: Tournament, m: Match, vm: LiveController, onExit: () -> Unit) {
     BackHandler { vm.pause(); onExit() }
     val top = pointsByPlayer(m).entries.sortedByDescending { it.value }.take(3)
     Screen(Navy) {
@@ -466,7 +469,7 @@ private fun HalftimeContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: 
  * Every attempt is a SHOOTOUT_ATTEMPT in the match log and the state shown here is derived from it (Match.shootout).
  */
 @Composable
-private fun TieBreakerContent(t: Tournament, m: Match, vm: LiveViewModel) {
+private fun TieBreakerContent(t: Tournament, m: Match, vm: LiveController) {
     val so = m.shootout(t.sport)
     val shootA = so.nextIsA
     val shooterTeamId = if (shootA) m.teamAId else m.teamBId
@@ -585,7 +588,7 @@ private fun TieBreakerContent(t: Tournament, m: Match, vm: LiveViewModel) {
 // ======================= SUMMARY =======================
 
 @Composable
-private fun SummaryContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: () -> Unit) {
+private fun SummaryContent(t: Tournament, m: Match, vm: LiveController, onExit: () -> Unit) {
     val pts = pointsByPlayer(m)
     val pom = pts.entries.maxByOrNull { it.value }
     // Set when the shootout decided it, e.g. "Won 2–1 on free throws · tie-breaker recorded".
@@ -661,30 +664,226 @@ private fun SummaryContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: (
 }
 
 // ─── Previews ───────────────────────────────────────────────────────────
+// These render the real screens with a fixed PreviewLiveController and a sample match from PreviewSamples.kt.
+// Taps do nothing. The sheets are overlays inside the live screen, so they show up in the same preview.
+// Only the organizer (admin) ever sees these screens; a viewer follows matches from the read-only hub instead.
 
-@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = 412, heightDp = 800)
+private const val PvW = 412
+private const val PvH = 800
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - clock running")
 @Composable
-private fun PreviewMatchReady() {
-    HoopsTheme {
-        Screen(Navy) {
-            Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Spacer(Modifier.weight(1f))
-                HText("READY TO PLAY", 14.sp, FontWeight.Bold, AccentDark)
-                Spacer(Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        HText("TEAM A", 14.sp, FontWeight.Bold, MuteDark)
-                        DisplayText("7", 72.sp, OnDark)
-                    }
-                    HText("–", 28.sp, FontWeight.Medium, MuteDark)
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        HText("TEAM B", 14.sp, FontWeight.Bold, MuteDark)
-                        DisplayText("5", 72.sp, OnDark)
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                PrimaryButton("Start Match", {}, color = AccentDark)
-            }
-        }
-    }
+private fun PreviewLiveRunning() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, running = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - paused (scoring locked, End disabled)")
+@Composable
+private fun PreviewLivePaused() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - time up, scores level")
+@Composable
+private fun PreviewLiveTimeUp() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 0L, timeUp = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - who scored? sheet")
+@Composable
+private fun PreviewLiveScorerSheet() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, sheetForA = true, sheetPoints = 2), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - substitution sheet")
+@Composable
+private fun PreviewLiveSubSheet() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, subForA = false), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Halftime - break running")
+@Composable
+private fun PreviewHalftime() {
+    val (t, m) = previewMatchIn(MatchStatus.BREAK)
+    HoopsTheme { HalftimeContent(t, m, PreviewLiveController(clockMs = 250_000L, running = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Tie-breaker - shootout in progress")
+@Composable
+private fun PreviewTieBreaker() {
+    val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 3)
+    HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Tie-breaker - not started (undo last basket)")
+@Composable
+private fun PreviewTieBreakerStart() {
+    val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true)
+    HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = PvW, heightDp = 900, name = "Admin - Full time - team A won (Edit scores)")
+@Composable
+private fun PreviewSummaryWin() {
+    val (t, m) = previewMatchIn(MatchStatus.FINISHED)
+    HoopsTheme { SummaryContent(t, m, PreviewLiveController(reopenable = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = PvW, heightDp = 900, name = "Admin - Full time - draw (no Edit scores)")
+@Composable
+private fun PreviewSummaryDraw() {
+    val (t, m) = previewMatchIn(MatchStatus.FINISHED, level = true)
+    HoopsTheme { SummaryContent(t, m, PreviewLiveController(), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - not started (Start, Undo off, 0-0)")
+@Composable
+private fun PreviewLiveNotStarted() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, scored = false)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 720_000L), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - 2nd half (End game)")
+@Composable
+private fun PreviewLiveSecondHalf() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, period = 2)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 305_000L, running = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - continuous game, +2/+3 only")
+@Composable
+private fun PreviewLiveContinuous() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, format = GameFormat(type = FormatType.CONTINUOUS, periodMin = 20, allow1 = false))
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 912_000L, running = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - football")
+@Composable
+private fun PreviewLiveFootball() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, sport = Sport.FOOTBALL)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 1_880_000L, running = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - football who scored? sheet")
+@Composable
+private fun PreviewLiveFootballScorer() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, sport = Sport.FOOTBALL)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 1_880_000L, sheetForA = true, sheetPoints = 1), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - team B has no players")
+@Composable
+private fun PreviewLiveRosterless() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, rosterlessB = true)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, running = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - who scored? sheet, no players")
+@Composable
+private fun PreviewLiveRosterlessScorer() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, rosterlessB = true)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, sheetForA = false, sheetPoints = 2), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - substitution sheet, no players")
+@Composable
+private fun PreviewLiveRosterlessSub() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, rosterlessB = true)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, subForA = false), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - substitution sheet, bench empty")
+@Composable
+private fun PreviewLiveEmptyBenchSub() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, wholeRosterOn = true)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, subForA = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - leave match? dialog")
+@Composable
+private fun PreviewLiveLeaveDialog() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, running = true), onExit = {}, initialDialog = LiveDialog.Exit) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - end match? dialog, a team leads")
+@Composable
+private fun PreviewLiveEndDialogLeader() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, running = true), onExit = {}, initialDialog = LiveDialog.End) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - end match? dialog, level league match (draw)")
+@Composable
+private fun PreviewLiveEndDialogDraw() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, running = true), onExit = {}, initialDialog = LiveDialog.End) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - end match? dialog, level knockout (shootout)")
+@Composable
+private fun PreviewLiveEndDialogShootout() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true, knockout = true)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L, running = true), onExit = {}, initialDialog = LiveDialog.End) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Halftime - break over")
+@Composable
+private fun PreviewHalftimeOver() {
+    val (t, m) = previewMatchIn(MatchStatus.BREAK)
+    HoopsTheme { HalftimeContent(t, m, PreviewLiveController(clockMs = 0L, timeUp = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Halftime - football 0-0 (no top scorers)")
+@Composable
+private fun PreviewHalftimeFootballGoalless() {
+    val (t, m) = previewMatchIn(MatchStatus.BREAK, sport = Sport.FOOTBALL, scored = false)
+    HoopsTheme { HalftimeContent(t, m, PreviewLiveController(clockMs = 600_000L, running = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Tie-breaker - sudden death")
+@Composable
+private fun PreviewTieBreakerSuddenDeath() {
+    val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 6)
+    HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Tie-breaker - football 0-0, nothing to undo")
+@Composable
+private fun PreviewTieBreakerFootball() {
+    val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true, sport = Sport.FOOTBALL, scored = false)
+    HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Tie-breaker - team with no players to shoot")
+@Composable
+private fun PreviewTieBreakerRosterless() {
+    val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 1, rosterlessB = true)
+    HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = PvW, heightDp = 900, name = "Admin - Full time - won on free throws")
+@Composable
+private fun PreviewSummaryShootout() {
+    val (t, m) = previewMatchIn(MatchStatus.FINISHED, level = true, knockout = true)
+    HoopsTheme { SummaryContent(t, m, PreviewLiveController(reopenable = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = PvW, heightDp = 900, name = "Admin - Full time - football 0-0 won on free kicks (no player of the match)")
+@Composable
+private fun PreviewSummaryFootballShootout() {
+    val (t, m) = previewMatchIn(MatchStatus.FINISHED, level = true, knockout = true, sport = Sport.FOOTBALL, scored = false)
+    HoopsTheme { SummaryContent(t, m, PreviewLiveController(), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = PvW, heightDp = 900, name = "Admin - Full time - team B has no players (team baskets)")
+@Composable
+private fun PreviewSummaryRosterless() {
+    val (t, m) = previewMatchIn(MatchStatus.FINISHED, rosterlessB = true)
+    HoopsTheme { SummaryContent(t, m, PreviewLiveController(), onExit = {}) }
 }

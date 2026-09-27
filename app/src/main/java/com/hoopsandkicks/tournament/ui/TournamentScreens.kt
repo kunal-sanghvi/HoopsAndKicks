@@ -1187,48 +1187,48 @@ fun ViewerScreen(code: String, onBack: () -> Unit, onFixtures: (String) -> Unit)
             onDeleted = {},
             readOnly = true
         )
-        else -> Screen {
-            TopBar("Room $code", onBack)
-            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                HText(
-                    when (s) {
-                        is JoinState.NotFound -> "No live tournament with code $code. Check the code with the organiser, or the room may have closed."
-                        is JoinState.Failed -> "Couldn't join: ${s.message}"
-                        else -> "Connecting to $code…"
-                    },
-                    14.sp, FontWeight.Medium, Mute, align = TextAlign.Center
-                )
-            }
+        else -> ViewerWaitingContent(code, viewerWaitingText(s, code), onBack)
+    }
+}
+
+private fun viewerWaitingText(s: JoinState?, code: String): String = when (s) {
+    is JoinState.NotFound -> "No live tournament with code $code. Check the code with the organiser, or the room may have closed."
+    is JoinState.Failed -> "Couldn't join: ${s.message}"
+    else -> "Connecting to $code…"
+}
+
+@Composable
+private fun ViewerWaitingContent(code: String, message: String, onBack: () -> Unit) {
+    Screen {
+        TopBar("Room $code", onBack)
+        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            HText(message, 14.sp, FontWeight.Medium, Mute, align = TextAlign.Center)
         }
     }
 }
 
 // ─── Previews ───────────────────────────────────────────────────────────
 // These call the private *Content functions with sample tournaments from PreviewSamples.kt, built by the app's own
-// Scheduler. Taps do nothing.
-// ViewerScreen is not previewed: it depends on the live Firebase connection (ViewerStore).
+// Scheduler. Taps do nothing. "Admin - ..." is the organizer; "Viewer - ..." is someone who joined a live room by code
+// (ViewerScreen shows TournamentContent / FixturesContent with readOnly = true; viewers never open a match screen).
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - live match, hosting")
+private const val PvBg = 0xFFF6F3EE
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Admin - Hub - live match, hosting")
 @Composable
 private fun PreviewHubLive() {
     HoopsTheme {
-        TournamentContent(previewActive.copy(roomCode = "K7M2QX"), {}, {}, {}, { _, _ -> }, readOnly = false)
+        TournamentContent(previewActive.copy(roomCode = PreviewRoomCode), {}, {}, {}, { _, _ -> }, readOnly = false)
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - up next")
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Admin - Hub - up next")
 @Composable
 private fun PreviewHubUpNext() {
     HoopsTheme { TournamentContent(previewUpNext, {}, {}, {}, { _, _ -> }, readOnly = false) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - viewer (read-only)")
-@Composable
-private fun PreviewHubViewer() {
-    HoopsTheme { TournamentContent(previewActive, {}, {}, {}, { _, _ -> }, readOnly = true) }
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - completed")
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Admin - Hub - completed")
 @Composable
 private fun PreviewHubCompleted() {
     HoopsTheme {
@@ -1236,47 +1236,49 @@ private fun PreviewHubCompleted() {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - schedule over plan")
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 1100, name = "Admin - Hub - schedule over plan (fix actions, Adjust plan)")
 @Composable
 private fun PreviewHubOverPlan() {
-    HoopsTheme {
-        TournamentContent(
-            previewUpNext.copy(endAt = previewUpNext.startAt + 90 * 60_000L), {}, {}, {}, { _, _ -> }, readOnly = false
-        )
-    }
+    HoopsTheme { TournamentContent(previewOverPlan, {}, {}, {}, { _, _ -> }, readOnly = false) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Tab - Standings")
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Admin - Tab - Standings")
 @Composable
 private fun PreviewStandingsTab() {
     HoopsTheme { TournamentContent(previewActive, {}, {}, {}, { _, _ -> }, readOnly = false, initialTab = 1) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Tab - Teams")
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Admin - Tab - Teams")
 @Composable
 private fun PreviewTeamsTab() {
     HoopsTheme { TournamentContent(previewActive, {}, {}, {}, { _, _ -> }, readOnly = false, initialTab = 2) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Tab - Stats")
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Admin - Tab - Stats")
 @Composable
 private fun PreviewStatsTab() {
     HoopsTheme { TournamentContent(previewActive, {}, {}, {}, { _, _ -> }, readOnly = false, initialTab = 3) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Fixtures")
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Admin - Fixtures (reorder)")
 @Composable
 private fun PreviewFixtures() {
     HoopsTheme { FixturesContent(previewActive, onBack = {}, onOpenMatch = { _, _ -> }, readOnly = false, onReorder = {}) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Reorder matches")
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Admin - Fixtures - nothing started (reorder + regenerate)")
+@Composable
+private fun PreviewFixturesNotStarted() {
+    HoopsTheme { FixturesContent(previewNotStarted, onBack = {}, onOpenMatch = { _, _ -> }, readOnly = false, onReorder = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Admin - Reorder matches")
 @Composable
 private fun PreviewReorder() {
     HoopsTheme { ReorderFixturesContent(previewActive, onBack = {}) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Match ready")
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Admin - Match ready")
 @Composable
 private fun PreviewMatchReadyScreen() {
     HoopsTheme {
@@ -1285,26 +1287,157 @@ private fun PreviewMatchReadyScreen() {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, name = "Match cards")
+/** One card per match state: upcoming, upcoming past the planned end, live, break, tie-break, won, draw, won on a shootout. */
 @Composable
-private fun PreviewMatchCards() {
-    HoopsTheme {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            previewActive.matches.take(3).forEach { MatchCard(previewActive, it, { _, _ -> }) }
-        }
+private fun MatchCardsEveryStatus(readOnly: Boolean) {
+    val upcoming = previewActive.matches.first { it.status == MatchStatus.SCHEDULED }
+    val pastPlan = previewOverPlan.matches.first { it.status == MatchStatus.SCHEDULED }
+    val cards = listOf(
+        previewActive to upcoming,
+        previewOverPlan to pastPlan,
+        previewMatchIn(MatchStatus.LIVE),
+        previewMatchIn(MatchStatus.BREAK),
+        previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 3),
+        previewMatchIn(MatchStatus.FINISHED),
+        previewMatchIn(MatchStatus.FINISHED, level = true),
+        previewMatchIn(MatchStatus.FINISHED, level = true, knockout = true)
+    )
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        cards.forEach { (t, m) -> MatchCard(t, m, { _, _ -> }, readOnly) }
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, name = "Small pieces")
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 1250, name = "Admin - Match cards, every status")
+@Composable
+private fun PreviewMatchCards() {
+    HoopsTheme { MatchCardsEveryStatus(readOnly = false) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, name = "Admin - Small pieces")
 @Composable
 private fun PreviewSmallPieces() {
     HoopsTheme {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SharePill {}
-            LiveHostingRow("K7M2QX") {}
+            LiveHostingRow(PreviewRoomCode) {}
             PastPlanRow(onFix = {})
             Box(Modifier.background(Navy).padding(8.dp)) { PastPlanRow(onFix = {}, dark = true) }
             Tile(Icons.Filled.Groups, "Teams & players", "4 teams · 12 players", Modifier.fillMaxWidth()) {}
         }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Viewer - Hub - live, clock running")
+@Composable
+private fun PreviewViewerHubRunning() {
+    HoopsTheme { TournamentContent(previewViewerIn(MatchStatus.LIVE, running = true), {}, {}, {}, { _, _ -> }, readOnly = true) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Viewer - Hub - live, paused")
+@Composable
+private fun PreviewHubViewer() {
+    HoopsTheme { TournamentContent(previewViewerIn(MatchStatus.LIVE), {}, {}, {}, { _, _ -> }, readOnly = true) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Viewer - Hub - halftime break")
+@Composable
+private fun PreviewViewerHubBreak() {
+    HoopsTheme { TournamentContent(previewViewerIn(MatchStatus.BREAK, running = true), {}, {}, {}, { _, _ -> }, readOnly = true) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Viewer - Hub - tie-break shootout")
+@Composable
+private fun PreviewViewerHubTieBreak() {
+    HoopsTheme {
+        TournamentContent(previewViewerIn(MatchStatus.TIEBREAK, shootoutAttempts = 3), {}, {}, {}, { _, _ -> }, readOnly = true)
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Viewer - Hub - up next (no Start button)")
+@Composable
+private fun PreviewViewerHubUpNext() {
+    HoopsTheme { TournamentContent(previewUpNext.copy(roomCode = PreviewRoomCode), {}, {}, {}, { _, _ -> }, readOnly = true) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Viewer - Hub - schedule over plan (no fix actions)")
+@Composable
+private fun PreviewViewerHubOverPlan() {
+    HoopsTheme { TournamentContent(previewOverPlan.copy(roomCode = PreviewRoomCode), {}, {}, {}, { _, _ -> }, readOnly = true) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Viewer - Hub - tournament complete")
+@Composable
+private fun PreviewViewerHubCompleted() {
+    HoopsTheme {
+        TournamentContent(
+            previewActive.copy(status = TStatus.COMPLETED, championId = "a", roomCode = PreviewRoomCode), {}, {}, {}, { _, _ -> }, readOnly = true
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Viewer - Tab - Standings (same as admin)")
+@Composable
+private fun PreviewViewerStandingsTab() {
+    HoopsTheme { TournamentContent(previewViewerIn(MatchStatus.LIVE), {}, {}, {}, { _, _ -> }, readOnly = true, initialTab = 1) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Viewer - Fixtures (no reorder, Upcoming badges)")
+@Composable
+private fun PreviewViewerFixtures() {
+    HoopsTheme { FixturesContent(previewViewerIn(MatchStatus.LIVE), onBack = {}, onOpenMatch = { _, _ -> }, readOnly = true, onReorder = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 800, name = "Viewer - Fixtures - nothing started (no regenerate)")
+@Composable
+private fun PreviewViewerFixturesNotStarted() {
+    HoopsTheme { FixturesContent(previewNotStarted, onBack = {}, onOpenMatch = { _, _ -> }, readOnly = true, onReorder = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 1250, name = "Viewer - Match cards, every status")
+@Composable
+private fun PreviewViewerMatchCards() {
+    HoopsTheme { MatchCardsEveryStatus(readOnly = true) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = 412, name = "Viewer - Live score line, every phase")
+@Composable
+private fun PreviewViewerScoreLines() {
+    val lines = listOf(
+        previewViewerIn(MatchStatus.LIVE, running = true),
+        previewViewerIn(MatchStatus.LIVE),
+        previewViewerIn(MatchStatus.BREAK, running = true),
+        previewViewerIn(MatchStatus.TIEBREAK, shootoutAttempts = 3),
+        previewViewerIn(MatchStatus.TIEBREAK, shootoutAttempts = 4, sport = Sport.FOOTBALL)
+    )
+    HoopsTheme {
+        Column(Modifier.background(Navy).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            lines.forEach { t ->
+                val m = t.realMatches().first {
+                    it.status == MatchStatus.LIVE || it.status == MatchStatus.BREAK || it.status == MatchStatus.TIEBREAK
+                }
+                LiveScoreLine(t, m)
+            }
+            PastPlanRow(onFix = null, dark = true)
+        }
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 500, name = "Viewer - Joining - connecting")
+@Composable
+private fun PreviewViewerConnecting() {
+    HoopsTheme { ViewerWaitingContent(PreviewRoomCode, viewerWaitingText(JoinState.Connecting, PreviewRoomCode), onBack = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 500, name = "Viewer - Joining - room not found")
+@Composable
+private fun PreviewViewerNotFound() {
+    HoopsTheme { ViewerWaitingContent(PreviewRoomCode, viewerWaitingText(JoinState.NotFound, PreviewRoomCode), onBack = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = PvBg, widthDp = 412, heightDp = 500, name = "Viewer - Joining - failed")
+@Composable
+private fun PreviewViewerFailed() {
+    HoopsTheme {
+        ViewerWaitingContent(PreviewRoomCode, viewerWaitingText(JoinState.Failed("network unavailable"), PreviewRoomCode), onBack = {})
     }
 }

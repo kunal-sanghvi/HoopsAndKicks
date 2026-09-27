@@ -2,14 +2,22 @@ package com.hoopsandkicks.tournament.ui
 
 import com.hoopsandkicks.tournament.data.Algorithm
 import com.hoopsandkicks.tournament.data.DRAW_NOTE
+import com.hoopsandkicks.tournament.data.FormatType
+import com.hoopsandkicks.tournament.data.GameFormat
 import com.hoopsandkicks.tournament.data.Match
+import com.hoopsandkicks.tournament.data.MatchEventType
+import com.hoopsandkicks.tournament.data.MatchLog
 import com.hoopsandkicks.tournament.data.MatchStatus
 import com.hoopsandkicks.tournament.data.Player
+import com.hoopsandkicks.tournament.data.ScoreEvent
 import com.hoopsandkicks.tournament.data.Scheduler
+import com.hoopsandkicks.tournament.data.Sport
 import com.hoopsandkicks.tournament.data.StageType
 import com.hoopsandkicks.tournament.data.TStatus
 import com.hoopsandkicks.tournament.data.Team
 import com.hoopsandkicks.tournament.data.Tournament
+import com.hoopsandkicks.tournament.data.shootout
+import com.hoopsandkicks.tournament.data.shootoutNote
 import kotlin.random.Random
 
 // Sample tournaments shared by the @Preview functions in the screen files. They are built with the app's own
@@ -134,4 +142,135 @@ internal val previewRrSemisFinal: Tournament by lazy {
 internal val previewRrFinalOnly: Tournament by lazy {
     val withFinal = Scheduler.advance(roundRobinBase("preview-rr-final", 4, semis = false, final = true).playOpenMatches(), Random(9))
     Scheduler.advance(withFinal.playOpenMatches(), Random(10))
+}
+
+/** A fixed [LiveController] for previews: it shows whatever state it is given and every action does nothing. */
+internal class PreviewLiveController(
+    override val clockMs: Long = 0L,
+    override val running: Boolean = false,
+    override val timeUp: Boolean = false,
+    override val sheetForA: Boolean? = null,
+    override val sheetPoints: Int = 0,
+    override val subForA: Boolean? = null,
+    private val reopenable: Boolean = false
+) : LiveController {
+    override fun togglePause() {}
+    override fun pause() {}
+    override fun addBreakMinute() {}
+    override fun openSheet(forA: Boolean, points: Int) {}
+    override fun closeSheet() {}
+    override fun openSub(forA: Boolean) {}
+    override fun closeSub() {}
+    override fun score(forA: Boolean, playerId: String?, points: Int) {}
+    override fun undo() {}
+    override fun substitute(forA: Boolean, outPlayerId: String, inPlayerId: String) {}
+    override fun endPeriod() {}
+    override fun endMatchNow() {}
+    override fun startNextPeriod() {}
+    override fun shootoutAttempt(playerId: String?, made: Boolean) {}
+    override fun canReopen(): Boolean = reopenable
+    override fun reopen() {}
+}
+
+/** [previewActive]'s players and teams in a 4-team single elimination: both semi-finals drawn, none played. */
+internal val previewKnockout: Tournament by lazy {
+    val base = previewActive.copy(id = "preview-ko4", name = "Knockout Cup", algorithm = Algorithm.SINGLE_ELIM, matches = emptyList())
+    Scheduler.scheduleTimes(base.copy(matches = Scheduler.generate(base, Random(11))))
+}
+
+/** [previewActive] before any match has been played, so the organizer can still regenerate the schedule. */
+internal val previewNotStarted: Tournament by lazy {
+    previewActive.copy(matches = previewActive.matches.map {
+        it.copy(status = MatchStatus.SCHEDULED, scoreA = 0, scoreB = 0, winnerId = null, tieNote = "")
+    })
+}
+
+/** [previewUpNext] with an end time 20 minutes after the start, so every upcoming match is planned past the end. */
+internal val previewOverPlan: Tournament by lazy {
+    previewUpNext.copy(endAt = previewUpNext.startAt + 20 * 60_000L)
+}
+
+internal const val PreviewRoomCode = "K7M2QX"
+
+/**
+ * A match put into [status], with lineups (one player each on the bench), a small scoring feed (10-7, or 10-10 when
+ * [level]; 4-3 / 4-4 in football) and, for a tie-break, [shootoutAttempts] attempts (team A shoots first).
+ * It comes from [previewActive] (round robin), or from [previewKnockout] when [knockout] (tie-breaks only happen there).
+ * A finished level match is a draw, or when [knockout] is won by team A in a shootout.
+ * [scored] = false gives 0-0 with no feed; [rosterlessB] strips team B's players; [wholeRosterOn] leaves nobody on the bench.
+ */
+internal fun previewMatchIn(
+    status: MatchStatus,
+    level: Boolean = false,
+    shootoutAttempts: Int = 0,
+    sport: Sport = Sport.BASKETBALL,
+    knockout: Boolean = status == MatchStatus.TIEBREAK,
+    scored: Boolean = true,
+    period: Int = 1,
+    format: GameFormat = sport.defaultFormat(),
+    rosterlessB: Boolean = false,
+    wholeRosterOn: Boolean = false
+): Pair<Tournament, Match> {
+    val source = if (knockout) previewKnockout else previewActive
+    val base = if (knockout) source.matches.first { it.status == MatchStatus.SCHEDULED && !it.bye }
+    else source.matches.first { it.status == MatchStatus.LIVE }
+    val t = source.copy(
+        sport = sport, format = format,
+        teams = source.teams.map { if (rosterlessB && it.id == base.teamBId) it.copy(playerIds = emptyList()) else it }
+    )
+    val a = t.team(base.teamAId)!!
+    val b = t.team(base.teamBId)!!
+    val tag = if (format.type == FormatType.HALVES) "1" else "G"
+    fun ev(i: Int, team: Team, player: Int, pts: Int) = ScoreEvent(
+        "e$i", team.id, team.playerIds.getOrNull(player), if (sport == Sport.FOOTBALL) 1 else pts, tag, "0$i:1$i", SampleStart
+    )
+    val events = mutableListOf(ev(1, a, 0, 3), ev(2, b, 0, 2), ev(3, a, 1, 2), ev(4, b, 1, 3), ev(5, a, 0, 2), ev(6, b, 0, 2), ev(7, a, 2, 3))
+    if (level) events += ev(8, b, 2, 3)
+    if (!scored) events.clear()
+    val finished = status == MatchStatus.FINISHED
+    var m = base.copy(
+        status = status,
+        period = period,
+        scoreA = events.filter { it.teamId == a.id }.sumOf { it.points },
+        scoreB = events.filter { it.teamId == b.id }.sumOf { it.points },
+        lineupA = if (wholeRosterOn) a.playerIds else a.playerIds.take(2),
+        lineupB = if (wholeRosterOn) b.playerIds else b.playerIds.take(2),
+        events = events,
+        remainingSec = 443,
+        breakRemainingSec = if (status == MatchStatus.BREAK) 250 else 0,
+        winnerId = if (finished && (!level || knockout)) a.id else null,
+        tieNote = if (finished && level && !knockout) DRAW_NOTE else ""
+    )
+    fun attempt(team: Team, i: Int, made: Boolean) = MatchLog.append(
+        m, MatchEventType.SHOOTOUT_ATTEMPT, teamId = team.id,
+        playerId = team.playerIds.getOrNull(i % maxOf(1, team.playerIds.size)), points = if (made) 1 else 0
+    )
+    if (status == MatchStatus.TIEBREAK) {
+        m = MatchLog.append(m, MatchEventType.TIEBREAK_START)
+        repeat(shootoutAttempts) { i -> m = attempt(if (i % 2 == 0) a else b, i, made = i % 3 != 1) }
+    }
+    if (finished && level && knockout) {
+        // Team A scores every attempt and team B misses, until the shootout is decided.
+        m = MatchLog.append(m, MatchEventType.TIEBREAK_START)
+        var i = 0
+        while (!m.shootout(sport).decided && i < 20) {
+            m = attempt(if (i % 2 == 0) a else b, i, made = i % 2 == 0)
+            i++
+        }
+        val so = m.shootout(sport)
+        m = m.copy(tieNote = shootoutNote(sport, so.madeA, so.madeB))
+    }
+    return t to m
+}
+
+/** The hosted tournament a viewer receives while a match is in [status]; a [running] clock was set just now. */
+internal fun previewViewerIn(
+    status: MatchStatus,
+    running: Boolean = false,
+    shootoutAttempts: Int = 0,
+    sport: Sport = Sport.BASKETBALL
+): Tournament {
+    val (t, m) = previewMatchIn(status, level = status == MatchStatus.TIEBREAK, shootoutAttempts = shootoutAttempts, sport = sport)
+    val clocked = m.copy(clockRunning = running, clockEpochMs = if (running) System.currentTimeMillis() else SampleStart)
+    return t.copy(roomCode = PreviewRoomCode, matches = t.matches.map { if (it.id == m.id) clocked else it })
 }

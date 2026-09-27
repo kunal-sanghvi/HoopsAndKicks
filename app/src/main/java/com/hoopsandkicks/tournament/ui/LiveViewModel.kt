@@ -27,30 +27,64 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
+ * Everything the match screens read from and call on the live-match state. [LiveViewModel] is the real
+ * implementation; previews use a fixed fake (see PreviewSamples.kt), so the screens never need the database.
+ */
+interface LiveController {
+    val clockMs: Long
+    val running: Boolean
+    val timeUp: Boolean
+
+    /** Scorer sheet state: which side is picking a scorer (true = team A) and for how many points. */
+    val sheetForA: Boolean?
+    val sheetPoints: Int
+
+    /** Substitution sheet state: which side is making a substitution (true = team A). */
+    val subForA: Boolean?
+
+    fun togglePause()
+    fun pause()
+    fun addBreakMinute()
+    fun openSheet(forA: Boolean, points: Int)
+    fun closeSheet()
+    fun openSub(forA: Boolean)
+    fun closeSub()
+    fun score(forA: Boolean, playerId: String?, points: Int)
+    fun undo()
+    fun substitute(forA: Boolean, outPlayerId: String, inPlayerId: String)
+    fun endPeriod()
+    fun endMatchNow()
+    fun startNextPeriod()
+    fun shootoutAttempt(playerId: String?, made: Boolean)
+    fun canReopen(): Boolean
+    fun reopen()
+}
+
+/**
  * Owns the running clock and all live-match actions. Match data itself lives in the repository;
  * this class only keeps the ticking clock in memory and writes it back on every important event.
  *
  * Every action also appends a MatchEvent to Match.log (append-only side record used for live sync and
  * replay). New events are pushed to the live room, if any, by the Repository after each save.
  */
-class LiveViewModel(private val tid: String, private val mid: String) : ViewModel() {
+class LiveViewModel(private val tid: String, private val mid: String) : ViewModel(), LiveController {
     private val repo = HoopsApp.repo
 
-    var clockMs by mutableLongStateOf(0L)
+    override var clockMs by mutableLongStateOf(0L)
         private set
-    var running by mutableStateOf(false)
+    override var running by mutableStateOf(false)
         private set
-    var timeUp by mutableStateOf(false)
+    override var timeUp by mutableStateOf(false)
         private set
 
     /** Scorer sheet state: which side is picking a scorer (true = team A) and for how many points. */
-    var sheetForA by mutableStateOf<Boolean?>(null)
+    override var sheetForA by mutableStateOf<Boolean?>(null)
         private set
-    var sheetPoints by mutableIntStateOf(0)
+    override var sheetPoints by mutableIntStateOf(0)
         private set
 
     /** Substitution sheet state: which side is making a substitution (true = team A). */
-    var subForA by mutableStateOf<Boolean?>(null)
+    override var subForA by mutableStateOf<Boolean?>(null)
         private set
 
     private fun tournament(): Tournament? = repo.get(tid)
@@ -138,7 +172,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
 
     // ---------- clock ----------
 
-    fun togglePause() {
+    override fun togglePause() {
         if (running) {
             running = false
             persistClock(MatchEventType.PAUSE)
@@ -149,14 +183,14 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
         }
     }
 
-    fun pause() {
+    override fun pause() {
         if (running) {
             running = false
             persistClock(MatchEventType.PAUSE)
         }
     }
 
-    fun addBreakMinute() {
+    override fun addBreakMinute() {
         clockMs += 60_000L
         timeUp = false
         persistClock(if (running) MatchEventType.RESUME else MatchEventType.PAUSE, "break +1 min")
@@ -164,26 +198,26 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
 
     // ---------- scoring ----------
 
-    fun openSheet(forA: Boolean, points: Int) {
+    override fun openSheet(forA: Boolean, points: Int) {
         subForA = null
         sheetForA = forA
         sheetPoints = points
     }
 
-    fun closeSheet() {
+    override fun closeSheet() {
         sheetForA = null
     }
 
-    fun openSub(forA: Boolean) {
+    override fun openSub(forA: Boolean) {
         sheetForA = null
         subForA = forA
     }
 
-    fun closeSub() {
+    override fun closeSub() {
         subForA = null
     }
 
-    fun score(forA: Boolean, playerId: String?, points: Int) {
+    override fun score(forA: Boolean, playerId: String?, points: Int) {
         val t = tournament() ?: return
         val m = t.match(mid) ?: return
         if (m.status != MatchStatus.LIVE) return
@@ -222,7 +256,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
      * Undo. During a shootout with attempts recorded it cancels the last attempt (the match stays in the tie-breaker);
      * otherwise it cancels the last regular score, which from the tie-breaker also returns the match to live play.
      */
-    fun undo() {
+    override fun undo() {
         val t = tournament() ?: return
         val m = t.match(mid) ?: return
         if (m.status != MatchStatus.LIVE && m.status != MatchStatus.TIEBREAK) return
@@ -268,7 +302,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
      * Swaps [outPlayerId] (on court) for [inPlayerId] (anyone else on the roster). Unlimited, and players may
      * come back on later. The scorer sheet reads the live lineup, so it reflects the change immediately.
      */
-    fun substitute(forA: Boolean, outPlayerId: String, inPlayerId: String) {
+    override fun substitute(forA: Boolean, outPlayerId: String, inPlayerId: String) {
         val m = match() ?: return
         if (m.status == MatchStatus.SCHEDULED || m.status == MatchStatus.FINISHED) return
         if (outPlayerId == inPlayerId) return
@@ -301,7 +335,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
         return f.type == FormatType.HALVES && m.period < f.periods()
     }
 
-    fun endPeriod() {
+    override fun endPeriod() {
         val t = tournament() ?: return
         val m = t.match(mid) ?: return
         if (m.status != MatchStatus.LIVE) return
@@ -324,7 +358,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
     }
 
     /** Ends the match now (or goes straight to the shootout tie-breaker if scores are level). */
-    fun endMatchNow() {
+    override fun endMatchNow() {
         running = false
         sheetForA = null
         subForA = null
@@ -352,7 +386,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
         }
     }
 
-    fun startNextPeriod() {
+    override fun startNextPeriod() {
         val t = tournament() ?: return
         val m = t.match(mid) ?: return
         if (m.status != MatchStatus.BREAK) return
@@ -374,7 +408,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
      * taken by [playerId] (null when the team has no roster), [made] = made / scored. Once the shootout is decided
      * the match finishes the same way as a decisive full time, with a "Won 2–1 on free throws" style note.
      */
-    fun shootoutAttempt(playerId: String?, made: Boolean) {
+    override fun shootoutAttempt(playerId: String?, made: Boolean) {
         val t = tournament() ?: return
         val m = t.match(mid) ?: return
         if (m.status != MatchStatus.TIEBREAK) return
@@ -417,7 +451,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
 
     // ---------- reopening ----------
 
-    fun canReopen(): Boolean {
+    override fun canReopen(): Boolean {
         val t = tournament() ?: return false
         val m = t.match(mid) ?: return false
         if (m.status != MatchStatus.FINISHED) return false
@@ -425,7 +459,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
         return m.frontier() == maxFrontier
     }
 
-    fun reopen() {
+    override fun reopen() {
         if (!canReopen()) return
         repo.mutate(tid) { t ->
             t.copy(
