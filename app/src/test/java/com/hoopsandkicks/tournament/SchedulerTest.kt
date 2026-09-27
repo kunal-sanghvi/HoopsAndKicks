@@ -56,7 +56,7 @@ class SchedulerTest {
     }
 
     @Test fun roundRobinAddsFinalBetweenTopTwo() {
-        val t = tournament(5, Algorithm.ROUND_ROBIN)
+        val t = tournament(5, Algorithm.ROUND_ROBIN).copy(rrFinal = true)
         val done = playAll(t)
         assertEquals(TStatus.COMPLETED, done.status)
         assertTrue(done.championId != null)
