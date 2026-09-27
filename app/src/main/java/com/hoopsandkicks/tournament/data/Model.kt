@@ -4,12 +4,21 @@ import java.util.UUID
 
 fun newId(): String = UUID.randomUUID().toString().replace("-", "").take(12)
 
+/** [Match.tieNote] recorded when a group or league match ends level. */
+const val DRAW_NOTE = "Draw"
+
+/** Points a team earns per group/league match. Knockouts, semi-finals and finals never award points. */
+data class PointsRule(val win: Int = 2, val tie: Int = 1, val loss: Int = 0)
+
 enum class Algorithm(val title: String, val blurb: String) {
     GROUP_KO("Group Stage → Semis → Finals", "Teams play inside groups, top teams reach the knockouts."),
     ROUND_ROBIN("Round Robin", "Every team plays every other team once, with optional semi-finals and a final."),
     SINGLE_ELIM("Single Elimination", "Lose once and you are out. Fastest format."),
     DOUBLE_ELIM("Double Elimination", "Two losses to be knocked out. Winners and elimination sides."),
-    SWISS("Swiss", "Fixed rounds, paired by current standings.")
+    SWISS("Swiss", "Fixed rounds, paired by current standings.");
+
+    /** Whether this format has a group or league stage where win/tie/loss points are awarded. */
+    val usesPoints: Boolean get() = this == GROUP_KO || this == ROUND_ROBIN || this == SWISS
 }
 
 enum class FormatType { CONTINUOUS, HALVES }
@@ -188,6 +197,15 @@ data class Match(
      */
     val pinned: Boolean = false
 ) {
+    /**
+     * Group and league matches (not knockouts, semi-finals or finals) can end level: they are recorded as a draw
+     * instead of going to a shootout, and they are the only matches that award points.
+     */
+    val awardsPoints: Boolean get() = !bye && !isFinal && stageType != StageType.KNOCKOUT
+
+    /** A finished match with no winner. */
+    val isDraw: Boolean get() = status == MatchStatus.FINISHED && !bye && winnerId == null
+
     /** A semi-final round match (any algorithm that draws a 4-team knockout round). */
     val isSemi: Boolean get() = !isFinal && !bye && stage == Scheduler.roundName(4)
 
@@ -219,6 +237,10 @@ data class Tournament(
     val rrSemis: Boolean = false,
     /** Round Robin only: play a final between the top 2 (or the semi-final winners) (needs more than 2 teams). */
     val rrFinal: Boolean = false,
+    /** Points per win / tie / loss in the group or league stage (see [Algorithm.usesPoints]). */
+    val winPoints: Int = 2,
+    val tiePoints: Int = 1,
+    val lossPoints: Int = 0,
     val format: GameFormat = GameFormat(),
     val matches: List<Match> = emptyList(),
     val status: TStatus = TStatus.DRAFT,
@@ -235,6 +257,7 @@ data class Tournament(
     fun realMatches(): List<Match> = matches.filter { !it.bye }
     fun anyStarted(): Boolean = matches.any { !it.bye && it.status != MatchStatus.SCHEDULED }
     fun maxGroups(): Int = maxOf(1, teams.size / 2)
+    fun pointsRule(): PointsRule = PointsRule(winPoints, tiePoints, lossPoints)
 }
 
 /**

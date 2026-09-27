@@ -38,6 +38,9 @@ object Json {
         o.put("advance", t.advance)
         o.put("rrSemis", t.rrSemis)
         o.put("rrFinal", t.rrFinal)
+        o.put("winPoints", t.winPoints)
+        o.put("tiePoints", t.tiePoints)
+        o.put("lossPoints", t.lossPoints)
         o.put("status", t.status.name)
         o.put("draftStep", t.draftStep)
         o.put("createdAt", t.createdAt)
@@ -214,6 +217,9 @@ object Json {
             rrSemis = o.optBoolean("rrSemis", false),
             // Tournaments saved before the option existed always played a final.
             rrFinal = o.optBoolean("rrFinal", true),
+            winPoints = o.optInt("winPoints", 2),
+            tiePoints = o.optInt("tiePoints", 1),
+            lossPoints = o.optInt("lossPoints", 0),
             format = format,
             matches = matches,
             status = TStatus.valueOf(o.optString("status", "DRAFT")),

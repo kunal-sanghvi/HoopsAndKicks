@@ -83,12 +83,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import com.hoopsandkicks.tournament.HoopsApp
-import com.hoopsandkicks.tournament.data.Algorithm
 import com.hoopsandkicks.tournament.data.Match
 import com.hoopsandkicks.tournament.data.MatchEventType
-import com.hoopsandkicks.tournament.data.Player
 import com.hoopsandkicks.tournament.data.Team
-import kotlin.random.Random
 import com.hoopsandkicks.tournament.data.MatchLog
 import com.hoopsandkicks.tournament.data.MatchStatus
 import com.hoopsandkicks.tournament.data.Scheduler
@@ -1200,37 +1197,9 @@ fun ViewerScreen(code: String, onBack: () -> Unit, onFixtures: (String) -> Unit)
 }
 
 // ─── Previews ───────────────────────────────────────────────────────────
-// These call the private *Content functions with a sample tournament built by the app's own Scheduler
-// (4 teams, round robin, 2 courts: one finished match, one live, the rest scheduled). Taps do nothing.
+// These call the private *Content functions with sample tournaments from PreviewSamples.kt, built by the app's own
+// Scheduler. Taps do nothing.
 // ViewerScreen is not previewed: it depends on the live Firebase connection (ViewerStore).
-
-private val previewActive: Tournament by lazy {
-    val start = 1_750_000_000_000L
-    val positions = listOf("Guard", "Forward", "Center")
-    val players = (1..12).map { Player("p$it", "Player $it", positions[it % 3], (it % 5) + 1) }
-    val teams = listOf(
-        Team("a", "Red Hawks", 0, players.subList(0, 3).map { it.id }),
-        Team("b", "Blue Jays", 1, players.subList(3, 6).map { it.id }),
-        Team("c", "Green Mambas", 2, players.subList(6, 9).map { it.id }),
-        Team("d", "Gold Kings", 3, players.subList(9, 12).map { it.id })
-    )
-    val base = Tournament(
-        id = "preview", name = "City Cup", startAt = start, endAt = start + 6 * 3_600_000L, courts = 2,
-        playerTarget = 12, teamTarget = 4, players = players, teams = teams,
-        algorithm = Algorithm.ROUND_ROBIN, status = TStatus.ACTIVE, draftStep = 5, createdAt = start
-    )
-    val scheduled = Scheduler.scheduleTimes(base.copy(matches = Scheduler.generate(base, Random(1))))
-    val ms = scheduled.matches.toMutableList()
-    ms[0] = ms[0].copy(status = MatchStatus.FINISHED, scoreA = 54, scoreB = 48, winnerId = ms[0].teamAId)
-    ms[1] = ms[1].copy(status = MatchStatus.LIVE, scoreA = 12, scoreB = 9, period = 1, remainingSec = 420)
-    scheduled.copy(matches = ms)
-}
-
-private val previewUpNext: Tournament by lazy {
-    previewActive.copy(matches = previewActive.matches.map {
-        if (it.status == MatchStatus.LIVE) it.copy(status = MatchStatus.SCHEDULED, scoreA = 0, scoreB = 0) else it
-    })
-}
 
 @Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Hub - live match, hosting")
 @Composable

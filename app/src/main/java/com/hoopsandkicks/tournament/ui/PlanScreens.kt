@@ -64,6 +64,37 @@ fun AlgorithmScreen(id: String, onBack: () -> Unit, onNext: () -> Unit) {
     AlgorithmContent(t, { change -> HoopsApp.repo.mutate(id, change) }, onBack, onNext)
 }
 
+private const val MaxPoints = 10
+
+/** Win / tie / loss points for the group or league stage. Knockouts, semi-finals and finals never award points. */
+@Composable
+private fun PointsSettings(t: Tournament, mutate: PlanMutate) {
+    Spacer(Modifier.height(12.dp))
+    HText("Points per match", 13.sp, FontWeight.Bold)
+    HText(
+        "Group and round-robin matches only. A level score ends the match as a tie. Knockouts, semi-finals and finals have no points.",
+        12.sp, FontWeight.Normal, Mute
+    )
+    StepperRow(
+        "Win", t.winPoints.toString(), "pts",
+        { if (t.winPoints > 0) mutate { it.copy(winPoints = it.winPoints - 1) } },
+        { if (t.winPoints < MaxPoints) mutate { it.copy(winPoints = it.winPoints + 1) } },
+        card = false
+    )
+    StepperRow(
+        "Tie", t.tiePoints.toString(), "pts",
+        { if (t.tiePoints > 0) mutate { it.copy(tiePoints = it.tiePoints - 1) } },
+        { if (t.tiePoints < MaxPoints) mutate { it.copy(tiePoints = it.tiePoints + 1) } },
+        card = false
+    )
+    StepperRow(
+        "Loss", t.lossPoints.toString(), "pts",
+        { if (t.lossPoints > 0) mutate { it.copy(lossPoints = it.lossPoints - 1) } },
+        { if (t.lossPoints < MaxPoints) mutate { it.copy(lossPoints = it.lossPoints + 1) } },
+        card = false
+    )
+}
+
 @Composable
 private fun AlgorithmContent(t: Tournament, mutate: PlanMutate, onBack: () -> Unit, onNext: () -> Unit) {
     Screen {
@@ -143,6 +174,7 @@ private fun AlgorithmContent(t: Tournament, mutate: PlanMutate, onBack: () -> Un
                         HText("$groupsText · top $adv advance", 13.sp, FontWeight.Bold)
                         HText(Scheduler.expectedStages(t).joinToString(" → "), 12.sp, FontWeight.Normal, Mute)
                     }
+                    if (on && algo.usesPoints) PointsSettings(t, mutate)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -394,13 +426,13 @@ private val previewPlanTournament: Tournament by lazy {
     )
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - group + knockout")
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 1100, name = "Algorithm - group + knockout")
 @Composable
 private fun PreviewAlgorithm() {
     HoopsTheme { AlgorithmContent(previewPlanTournament, mutate = {}, onBack = {}, onNext = {}) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - round robin, nothing ticked")
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 1100, name = "Algorithm - round robin, nothing ticked")
 @Composable
 private fun PreviewAlgorithmRoundRobin() {
     HoopsTheme {
@@ -408,7 +440,7 @@ private fun PreviewAlgorithmRoundRobin() {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - round robin, semis + final")
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 1100, name = "Algorithm - round robin, semis + final")
 @Composable
 private fun PreviewAlgorithmRoundRobinSemis() {
     HoopsTheme {
@@ -416,7 +448,7 @@ private fun PreviewAlgorithmRoundRobinSemis() {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - round robin, final only")
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 1100, name = "Algorithm - round robin, final only")
 @Composable
 private fun PreviewAlgorithmRoundRobinFinal() {
     HoopsTheme {
@@ -424,7 +456,7 @@ private fun PreviewAlgorithmRoundRobinFinal() {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - round robin, 4 teams (semis off)")
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 1100, name = "Algorithm - round robin, 4 teams (semis off)")
 @Composable
 private fun PreviewAlgorithmRoundRobinFourTeams() {
     val t = previewPlanTournament
@@ -436,7 +468,7 @@ private fun PreviewAlgorithmRoundRobinFourTeams() {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 800, name = "Algorithm - round robin, 2 teams (both off)")
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 1100, name = "Algorithm - round robin, 2 teams (both off)")
 @Composable
 private fun PreviewAlgorithmRoundRobinTwoTeams() {
     val t = previewPlanTournament
@@ -446,6 +478,26 @@ private fun PreviewAlgorithmRoundRobinTwoTeams() {
             mutate = {}, onBack = {}, onNext = {}
         )
     }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 1100, name = "Algorithm - custom points (3 / 1 / 0)")
+@Composable
+private fun PreviewAlgorithmCustomPoints() {
+    HoopsTheme {
+        AlgorithmContent(previewPlanTournament.copy(winPoints = 3, tiePoints = 1, lossPoints = 0), mutate = {}, onBack = {}, onNext = {})
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 1100, name = "Algorithm - swiss (points)")
+@Composable
+private fun PreviewAlgorithmSwiss() {
+    HoopsTheme { AlgorithmContent(previewPlanTournament.copy(algorithm = Algorithm.SWISS), mutate = {}, onBack = {}, onNext = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 1100, name = "Algorithm - single elimination (no points)")
+@Composable
+private fun PreviewAlgorithmSingleElim() {
+    HoopsTheme { AlgorithmContent(previewPlanTournament.copy(algorithm = Algorithm.SINGLE_ELIM), mutate = {}, onBack = {}, onNext = {}) }
 }
 
 @Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 900, name = "Game format - basketball")

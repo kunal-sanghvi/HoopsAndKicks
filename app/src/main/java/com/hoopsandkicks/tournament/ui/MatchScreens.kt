@@ -227,7 +227,15 @@ private fun LiveContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: () -
         AlertDialog(
             onDismissRequest = { showEnd = false },
             title = { Text("End match now?") },
-            text = { Text(if (m.scoreA == m.scoreB) "Scores are level, so it goes straight to a ${t.sport.shootoutNameLower}." else "The leading team will be recorded as the winner.") },
+            text = {
+                Text(
+                    when {
+                        m.scoreA != m.scoreB -> "The leading team will be recorded as the winner."
+                        m.awardsPoints -> "Scores are level, so the match will be recorded as a draw."
+                        else -> "Scores are level, so it goes straight to a ${t.sport.shootoutNameLower}."
+                    }
+                )
+            },
             confirmButton = { TextButton(onClick = { showEnd = false; vm.endMatchNow() }) { Text("End match") } },
             dismissButton = { TextButton(onClick = { showEnd = false }) { Text("Keep playing") } }
         )
@@ -672,11 +680,12 @@ private fun SummaryContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: (
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Badge("Winner: ${t.teamName(m.winnerId)}", winnerColor, onColor(winnerColor))
+                if (m.isDraw) Badge("Draw", Navy3, OnDark)
+                else Badge("Winner: ${t.teamName(m.winnerId)}", winnerColor, onColor(winnerColor))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    DisplayText("${m.scoreA}", 80.sp, if (m.winnerId == m.teamAId) OnDark else MuteDark)
+                    DisplayText("${m.scoreA}", 80.sp, if (m.isDraw || m.winnerId == m.teamAId) OnDark else MuteDark)
                     HText("–", 26.sp, FontWeight.Medium, MuteDark)
-                    DisplayText("${m.scoreB}", 80.sp, if (m.winnerId == m.teamBId) OnDark else MuteDark)
+                    DisplayText("${m.scoreB}", 80.sp, if (m.isDraw || m.winnerId == m.teamBId) OnDark else MuteDark)
                 }
                 HText("${t.teamName(m.teamAId)} vs ${t.teamName(m.teamBId)} · ${m.title(t)}".uppercase(), 12.sp, FontWeight.Bold, MuteDark, align = TextAlign.Center)
             }

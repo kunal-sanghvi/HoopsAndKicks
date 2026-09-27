@@ -500,7 +500,7 @@ object Scheduler {
                     )
                 }
                 if (ms.all { it.status == MatchStatus.FINISHED }) {
-                    val top = Standings.compute(ids, ms).map { it.teamId }
+                    val top = Standings.compute(ids, ms, t.pointsRule()).map { it.teamId }
                     if (rrSemisOn(t) && top.size >= 4) {
                         return addMatches(
                             t,
@@ -529,7 +529,7 @@ object Scheduler {
                     val perGroup = groupNames.map { g ->
                         val gm = stage.filter { it.group == g }
                         val gids = gm.flatMap { listOfNotNull(it.teamAId, it.teamBId) }.distinct()
-                        Standings.compute(gids, gm).map { it.teamId }
+                        Standings.compute(gids, gm, t.pointsRule()).map { it.teamId }
                     }
                     val seeds = ArrayList<String>()
                     for (rank in 0 until adv) {
@@ -553,7 +553,7 @@ object Scheduler {
             Algorithm.SWISS -> {
                 val lr = ms.maxOf { it.round }
                 if (ms.filter { it.round == lr }.any { it.status != MatchStatus.FINISHED }) return null
-                val rows = Standings.compute(ids, ms)
+                val rows = Standings.compute(ids, ms, t.pointsRule())
                 if (lr >= swissRounds(ids.size)) return complete(t, rows.firstOrNull()?.teamId)
                 return addMatches(t, swissRound(rows.map { it.teamId }, ms, lr + 1))
             }
@@ -567,6 +567,7 @@ data class StandingRow(
     val played: Int,
     val wins: Int,
     val losses: Int,
+    val ties: Int,
     val pf: Int,
     val pa: Int,
     val points: Int
@@ -575,19 +576,18 @@ data class StandingRow(
 }
 
 object Standings {
-    const val WIN_POINTS = 2
-
     /**
-     * Ranks teams by points, then head-to-head (only when exactly two teams are tied),
-     * then point difference, then points scored.
+     * Ranks teams by points ([rule]: win / tie / loss), then head-to-head (only when exactly two teams are tied),
+     * then point difference, then points scored. A finished match with no winner counts as a tie for both teams.
      */
-    fun compute(teamIds: List<String>, matches: List<Match>): List<StandingRow> {
+    fun compute(teamIds: List<String>, matches: List<Match>, rule: PointsRule = PointsRule()): List<StandingRow> {
         val played = HashMap<String, Int>()
         val wins = HashMap<String, Int>()
         val losses = HashMap<String, Int>()
+        val ties = HashMap<String, Int>()
         val pf = HashMap<String, Int>()
         val pa = HashMap<String, Int>()
-        teamIds.forEach { played[it] = 0; wins[it] = 0; losses[it] = 0; pf[it] = 0; pa[it] = 0 }
+        teamIds.forEach { played[it] = 0; wins[it] = 0; losses[it] = 0; ties[it] = 0; pf[it] = 0; pa[it] = 0 }
 
         val finished = matches.filter { it.status == MatchStatus.FINISHED }
         for (m in finished) {
@@ -609,10 +609,14 @@ object Standings {
             val w = m.winnerId
             if (w == a) { wins[a] = wins[a]!! + 1; losses[b] = losses[b]!! + 1 }
             else if (w == b) { wins[b] = wins[b]!! + 1; losses[a] = losses[a]!! + 1 }
+            else { ties[a] = ties[a]!! + 1; ties[b] = ties[b]!! + 1 }
         }
 
         val rows = teamIds.map {
-            StandingRow(it, played[it]!!, wins[it]!!, losses[it]!!, pf[it]!!, pa[it]!!, wins[it]!! * WIN_POINTS)
+            StandingRow(
+                it, played[it]!!, wins[it]!!, losses[it]!!, ties[it]!!, pf[it]!!, pa[it]!!,
+                wins[it]!! * rule.win + ties[it]!! * rule.tie + losses[it]!! * rule.loss
+            )
         }
         val order = teamIds.withIndex().associate { it.value to it.index }
         val sorted = rows.sortedWith(
@@ -647,9 +651,11 @@ object Standings {
 data class OverallRow(
     val teamId: String,
     val statusText: String,
-    val groupPts: Int,
-    val koPts: Int,
-    val finalPts: Int,
+    /** Group / league stage only (knockouts, semi-finals and finals award no points); all 0 for pure knockout formats. */
+    val played: Int,
+    val won: Int,
+    val lost: Int,
+    val tied: Int,
     val total: Int,
     val pd: Int
 )
@@ -668,29 +674,23 @@ object Leaderboards {
 
     fun overall(t: Tournament): List<OverallRow> {
         val ids = t.teams.map { it.id }
-        val finished = t.matches.filter { it.status == MatchStatus.FINISHED && !it.bye }
-        val hasKo = t.matches.any { it.stageType == StageType.KNOCKOUT }
-        val lastKoRound = t.matches.filter { it.stageType == StageType.KNOCKOUT }.maxOfOrNull { it.frontier() }
+        val knockoutDrawn = t.matches.any { !it.bye && (it.isFinal || it.stageType == StageType.KNOCKOUT) }
 
         data class Tmp(val row: OverallRow, val depth: Int, val champ: Boolean)
 
+        // Only group / league matches count: knockouts, semi-finals and finals have no points concept.
+        val standing = if (t.algorithm.usesPoints) {
+            Standings.compute(ids, t.matches.filter { it.awardsPoints || (it.bye && it.stageType != StageType.KNOCKOUT) }, t.pointsRule())
+                .associateBy { it.teamId }
+        } else emptyMap()
+
         val rows = ids.map { id ->
-            val mine = finished.filter { it.teamAId == id || it.teamBId == id }
-            var g = 0; var k = 0; var f = 0; var pd = 0
-            mine.forEach { m ->
-                val won = m.winnerId == id
-                val pts = if (won) Standings.WIN_POINTS else 0
-                when {
-                    m.isFinal -> f += pts
-                    m.stageType == StageType.KNOCKOUT -> k += pts
-                    else -> g += pts
-                }
-                pd += if (m.teamAId == id) m.scoreA - m.scoreB else m.scoreB - m.scoreA
-            }
+            val st = standing[id]
             val allMine = t.matches.filter { it.teamAId == id || it.teamBId == id }
             val depth = allMine.maxOfOrNull { it.frontier() } ?: 0
             val champ = t.championId == id
             val playedFinal = allMine.any { it.isFinal && !it.bye && it.status == MatchStatus.FINISHED }
+            val inLater = allMine.any { !it.bye && (it.isFinal || it.stageType == StageType.KNOCKOUT) }
             val koMatches = allMine.filter { it.stageType == StageType.KNOCKOUT && !it.bye }
             val lastKo = koMatches.maxByOrNull { it.frontier() }
             val status = when {
@@ -701,11 +701,16 @@ object Leaderboards {
                     if (lastKo.status == MatchStatus.FINISHED && lastKo.winnerId != id) "Out in ${lastKo.stage}"
                     else if (t.status == TStatus.COMPLETED) "Out in ${lastKo.stage}" else "Still in"
                 }
-                hasKo && lastKoRound != null -> "Out in groups"
+                // A final (or a knockout round) has been drawn and this team is not in it.
+                knockoutDrawn && !inLater -> if (t.algorithm == Algorithm.GROUP_KO) "Out in groups" else "Out in round robin"
+                inLater -> "Still in"
                 t.status == TStatus.COMPLETED -> "Completed"
                 else -> "In progress"
             }
-            Tmp(OverallRow(id, status, g, k, f, g + k + f, pd), depth, champ)
+            Tmp(
+                OverallRow(id, status, st?.played ?: 0, st?.wins ?: 0, st?.losses ?: 0, st?.ties ?: 0, st?.points ?: 0, st?.pd ?: 0),
+                depth, champ
+            )
         }
         return rows.sortedWith(
             compareByDescending<Tmp> { it.champ }

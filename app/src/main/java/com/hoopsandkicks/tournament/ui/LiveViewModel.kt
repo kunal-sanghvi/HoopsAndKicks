@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoopsandkicks.tournament.HoopsApp
+import com.hoopsandkicks.tournament.data.DRAW_NOTE
 import com.hoopsandkicks.tournament.data.FormatType
 import com.hoopsandkicks.tournament.data.GameFormat
 import com.hoopsandkicks.tournament.data.Match
@@ -330,12 +331,17 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
         endRegulation()
     }
 
-    /** Full time: the leader wins; a tie goes straight to the sport's shootout (no overtime / extra time). */
+    /**
+     * Full time: the leader wins. A level score is a draw in group / league matches; in knockouts, semi-finals and
+     * finals it goes straight to the sport's shootout instead (no overtime / extra time).
+     */
     private fun endRegulation() {
         val m = match() ?: return
         if (m.scoreA != m.scoreB) {
             val winner = (if (m.scoreA > m.scoreB) m.teamAId else m.teamBId) ?: return
             finish(winner, "")
+        } else if (m.awardsPoints) {
+            finishDraw()
         } else {
             repo.updateMatch(tid, mid) {
                 it.copy(status = MatchStatus.TIEBREAK, remainingSec = 0)
@@ -387,6 +393,16 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
             if (winnerIsA) after.madeB else after.madeA
         )
         finish(winner, note)
+    }
+
+    private fun finishDraw() {
+        running = false
+        timeUp = false
+        repo.updateMatch(tid, mid) {
+            it.copy(status = MatchStatus.FINISHED, winnerId = null, tieNote = DRAW_NOTE)
+                .logged(MatchEventType.MATCH_END, note = DRAW_NOTE, clockRunning = false)
+        }
+        repo.mutate(tid) { Scheduler.advance(it) }
     }
 
     private fun finish(winnerId: String, note: String) {
