@@ -16,8 +16,8 @@ android {
         applicationId = "com.hoopsandkicks.tournament"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 1
+        versionName = "1.0"
     }
 
     // Release signing credentials live in keystore.properties (git-ignored); without it the release APK is unsigned.
