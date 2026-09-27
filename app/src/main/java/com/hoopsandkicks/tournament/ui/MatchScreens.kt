@@ -74,6 +74,7 @@ import com.hoopsandkicks.tournament.data.Tournament
 import com.hoopsandkicks.tournament.data.eligibleShooters
 import com.hoopsandkicks.tournament.data.shootout
 import com.hoopsandkicks.tournament.data.shootoutResult
+import com.hoopsandkicks.tournament.data.timeUpChoices
 
 private fun onColor(c: Color): Color = if (c.luminance() > 0.5f) Ink else Color.White
 
@@ -125,8 +126,13 @@ private fun LiveContent(t: Tournament, m: Match, vm: LiveController, onExit: () 
     BackHandler { showExit = true }
 
     val periodFullMs = f.periodMin * 60_000L
-    val endLabel = if (halves && m.period < f.periods()) "End half" else "End game"
+    val lastPeriod = !(halves && m.period < f.periods())
+    val endLabel = if (lastPeriod) "End game" else "End half"
     val options = f.pointOptions()
+    // Once the last period's clock has run out, level scores swap Pause for "Tie Breaker" (see timeUpChoices).
+    val fullTime = vm.timeUp && lastPeriod
+    val choices = m.timeUpChoices()
+    val offerTieBreaker = fullTime && choices.tieBreaker
 
     Screen(Navy) {
         Box(Modifier.fillMaxSize()) {
@@ -151,20 +157,37 @@ private fun LiveContent(t: Tournament, m: Match, vm: LiveController, onExit: () 
                         HText(m.periodName(halves), 13.sp, FontWeight.Bold, OnDark)
                     }
                     DisplayText(formatClock(vm.clockMs), 96.sp, if (vm.timeUp) AccentDark else OnDark)
-                    if (vm.timeUp) HText("Time! End the period to continue.", 13.sp, FontWeight.Bold, AccentDark)
+                    if (vm.timeUp) {
+                        HText(
+                            when {
+                                !offerTieBreaker -> "Time! End the period to continue."
+                                choices.endGame -> "Time! Scores level: play a tie-breaker or end as a draw."
+                                else -> "Time! Scores level: the tie-breaker decides the winner."
+                            },
+                            13.sp, FontWeight.Bold, AccentDark
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SecondaryButton(
-                            if (vm.running) "Pause" else if (vm.clockMs < periodFullMs) "Resume" else "Start",
-                            { vm.togglePause() },
-                            Modifier.height(44.dp),
-                            icon = if (vm.running) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            dark = true,
-                            enabled = vm.clockMs > 0L
-                        )
+                        if (offerTieBreaker) {
+                            SecondaryButton(
+                                "Tie Breaker", { vm.startTieBreaker() }, Modifier.height(44.dp),
+                                icon = if (t.sport == Sport.FOOTBALL) Icons.Filled.SportsSoccer else Icons.Filled.SportsBasketball,
+                                dark = true
+                            )
+                        } else {
+                            SecondaryButton(
+                                if (vm.running) "Pause" else if (vm.clockMs < periodFullMs) "Resume" else "Start",
+                                { vm.togglePause() },
+                                Modifier.height(44.dp),
+                                icon = if (vm.running) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                dark = true,
+                                enabled = vm.clockMs > 0L
+                            )
+                        }
                         SecondaryButton(
                             endLabel, { vm.endPeriod() }, Modifier.height(44.dp), icon = Icons.Filled.ChevronRight, dark = true,
-                            enabled = vm.running || vm.timeUp
+                            enabled = if (fullTime) choices.endGame else vm.running || vm.timeUp
                         )
                     }
                 }
@@ -465,9 +488,10 @@ private fun HalftimeContent(t: Tournament, m: Match, vm: LiveController, onExit:
 // ======================= TIE-BREAKER =======================
 
 /**
- * Fixed per sport, no organizer choice: a free-throw shootout (basketball, 3 each) or free-kick shootout (football,
- * 5 each). Teams alternate attempt by attempt; still level after the allotment goes to sudden death, one attempt each.
- * Every attempt is a SHOOTOUT_ATTEMPT in the match log and the state shown here is derived from it (Match.shootout).
+ * Fixed per sport: a free-throw shootout (basketball, 3 each) or free-kick shootout (football, 5 each). Teams alternate
+ * attempt by attempt. Still level after the allotment goes to sudden death in knockouts, or ends as a draw in group /
+ * league matches (a single round, see ShootoutState.singleRound). Every attempt is a SHOOTOUT_ATTEMPT in the match
+ * log and the state shown here is derived from it (Match.shootout).
  */
 @Composable
 private fun TieBreakerContent(t: Tournament, m: Match, vm: LiveController) {
@@ -569,7 +593,8 @@ private fun TieBreakerContent(t: Tournament, m: Match, vm: LiveController) {
                 }
             }
             HText(
-                "Still tied after ${so.perTeam} each repeats one ${t.sport.shootoutAttemptSingular} at a time, sudden death, until decided.",
+                if (so.singleRound) "If still level after ${so.perTeam} each, the match is a draw."
+                else "Still tied after ${so.perTeam} each repeats one ${t.sport.shootoutAttemptSingular} at a time, sudden death, until decided.",
                 12.sp, FontWeight.Normal, Mute, Modifier.fillMaxWidth(), TextAlign.Center
             )
         }
@@ -691,7 +716,7 @@ private fun PreviewLivePaused() {
     HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L), onExit = {}) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - end of 2nd half, scoring locked")
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - time up, not level (Pause off, End game)")
 @Composable
 private fun PreviewLiveEndOfSecondHalf() {
     val (t, m) = previewMatchIn(MatchStatus.LIVE, period = 2)
@@ -701,14 +726,14 @@ private fun PreviewLiveEndOfSecondHalf() {
 @Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - after Edit scores, scoring open")
 @Composable
 private fun PreviewLiveEditingScores() {
-    val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true)
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true, period = 2)
     HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 0L, timeUp = true, editingScores = true), onExit = {}) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - time up, scoring locked")
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - time up, level group match (Tie Breaker + End game)")
 @Composable
 private fun PreviewLiveTimeUp() {
-    val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true)
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true, period = 2)
     HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 0L, timeUp = true), onExit = {}) }
 }
 
@@ -920,4 +945,57 @@ private fun PreviewSummaryFootballShootout() {
 private fun PreviewSummaryRosterless() {
     val (t, m) = previewMatchIn(MatchStatus.FINISHED, rosterlessB = true)
     HoopsTheme { SummaryContent(t, m, PreviewLiveController(), onExit = {}) }
+}
+
+// ─── Previews: tie-breaker choice at full time and the single-round group shootout ───
+// Group / league matches play one round (3 free throws / 5 free kicks each) and a level round is a draw; knockouts keep
+// sudden death. Samples for finished group shootouts come from TieBreakRulePreviews.kt.
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - time up, level knockout (Tie Breaker, End game off)")
+@Composable
+private fun PreviewLiveTimeUpKnockout() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true, knockout = true, period = 2)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 0L, timeUp = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - time up, level continuous group game (Tie Breaker + End game)")
+@Composable
+private fun PreviewLiveTimeUpContinuous() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true, format = GameFormat(type = FormatType.CONTINUOUS, periodMin = 20))
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 0L, timeUp = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Tie-breaker - group single round, attempt 2 of 3")
+@Composable
+private fun PreviewTieBreakerGroupRound() {
+    val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 3, knockout = false)
+    HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Tie-breaker - group single round, last attempt (level if made)")
+@Composable
+private fun PreviewTieBreakerGroupLastAttempt() {
+    val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 5, knockout = false)
+    HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Tie-breaker - group football single round")
+@Composable
+private fun PreviewTieBreakerGroupFootball() {
+    val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 6, knockout = false, sport = Sport.FOOTBALL)
+    HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = PvW, heightDp = 1000, name = "Admin - Full time - group draw after shootout (Draw · 2–2)")
+@Composable
+private fun PreviewSummaryGroupShootoutDraw() {
+    val (t, m) = previewGroupShootout(GroupShotsDraw)
+    HoopsTheme { SummaryContent(t, m, PreviewLiveController(reopenable = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = PvW, heightDp = 1000, name = "Admin - Full time - group won on free throws")
+@Composable
+private fun PreviewSummaryGroupShootoutWin() {
+    val (t, m) = previewGroupShootout(GroupShotsWin)
+    HoopsTheme { SummaryContent(t, m, PreviewLiveController(reopenable = true), onExit = {}) }
 }

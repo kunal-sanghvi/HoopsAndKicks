@@ -23,7 +23,9 @@ import com.hoopsandkicks.tournament.data.Tournament
 import com.hoopsandkicks.tournament.data.eligibleShooters
 import com.hoopsandkicks.tournament.data.newId
 import com.hoopsandkicks.tournament.data.shootout
+import com.hoopsandkicks.tournament.data.shootoutDrawNote
 import com.hoopsandkicks.tournament.data.shootoutNote
+import com.hoopsandkicks.tournament.data.timeUpChoices
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -59,6 +61,9 @@ interface LiveController {
     fun endPeriod()
     fun endMatchNow()
     fun startNextPeriod()
+
+    /** Full time with the scores level: go to the shootout (the "Tie Breaker" button that replaces Pause). */
+    fun startTieBreaker()
     fun shootoutAttempt(playerId: String?, made: Boolean)
     fun canReopen(): Boolean
     fun reopen()
@@ -377,8 +382,9 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
     }
 
     /**
-     * Full time: the leader wins. A level score is a draw in group / league matches; in knockouts, semi-finals and
-     * finals it goes straight to the sport's shootout instead (no overtime / extra time).
+     * Full time: the leader wins. A level score is a draw in group / league matches (the organizer can pick
+     * "Tie Breaker" instead, see [startTieBreaker]); in knockouts, semi-finals and finals it always goes to the
+     * sport's shootout, so a knockout can never end as a draw (no overtime / extra time).
      */
     private fun endRegulation() {
         val m = match() ?: return
@@ -386,15 +392,32 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
             val winner = (if (m.scoreA > m.scoreB) m.teamAId else m.teamBId) ?: return
             finish(winner, "")
         } else if (m.awardsPoints) {
-            finishDraw()
+            finishDraw(DRAW_NOTE)
         } else {
-            repo.updateMatch(tid, mid) {
-                it.copy(status = MatchStatus.TIEBREAK, remainingSec = 0)
-                    .logged(MatchEventType.TIEBREAK_START, clockSec = 0, clockRunning = false)
-            }
-            clockMs = 0L
-            timeUp = false
+            beginTieBreak()
         }
+    }
+
+    override fun startTieBreaker() {
+        val t = tournament() ?: return
+        val m = t.match(mid) ?: return
+        if (m.status != MatchStatus.LIVE || !timeUp || !m.timeUpChoices().tieBreaker) return
+        val f = fmt(t, m)
+        if (f.type == FormatType.HALVES && m.period < f.periods()) return
+        running = false
+        editingScores = false
+        sheetForA = null
+        subForA = null
+        beginTieBreak()
+    }
+
+    private fun beginTieBreak() {
+        repo.updateMatch(tid, mid) {
+            it.copy(status = MatchStatus.TIEBREAK, remainingSec = 0)
+                .logged(MatchEventType.TIEBREAK_START, clockSec = 0, clockRunning = false)
+        }
+        clockMs = 0L
+        timeUp = false
     }
 
     override fun startNextPeriod() {
@@ -417,14 +440,15 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
     /**
      * Records the next shootout attempt: the team due to shoot (teams alternate, A first; see Match.shootout),
      * taken by [playerId] (null when the team has no roster), [made] = made / scored. Once the shootout is decided
-     * the match finishes the same way as a decisive full time, with a "Won 2–1 on free throws" style note.
+     * the match finishes the same way as a decisive full time, with a "Won 2–1 on free throws" style note; a group /
+     * league round that ends level finishes as a draw ("Draw · 2–2 on free throws").
      */
     override fun shootoutAttempt(playerId: String?, made: Boolean) {
         val t = tournament() ?: return
         val m = t.match(mid) ?: return
         if (m.status != MatchStatus.TIEBREAK) return
         val before = m.shootout(t.sport)
-        if (before.decided) return
+        if (before.over) return
         val teamId = (if (before.nextIsA) m.teamAId else m.teamBId) ?: return
         val roster = t.team(teamId)?.playerIds ?: emptyList()
         if (roster.isNotEmpty() && playerId !in before.eligibleShooters(before.nextIsA, roster)) return
@@ -432,6 +456,10 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
             it.logged(MatchEventType.SHOOTOUT_ATTEMPT, teamId = teamId, playerId = playerId, points = if (made) 1 else 0)
         }
         val after = match()?.shootout(t.sport) ?: return
+        if (after.endedLevel) {
+            finishDraw(shootoutDrawNote(t.sport, after.madeA, after.madeB))
+            return
+        }
         val winner = after.winnerId ?: return
         val winnerIsA = winner == m.teamAId
         val note = shootoutNote(
@@ -442,12 +470,13 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
         finish(winner, note)
     }
 
-    private fun finishDraw() {
+    /** [note] is "Draw", or "Draw · 2–2 on free throws" after a level single-round shootout. */
+    private fun finishDraw(note: String) {
         running = false
         timeUp = false
         repo.updateMatch(tid, mid) {
-            it.copy(status = MatchStatus.FINISHED, winnerId = null, tieNote = DRAW_NOTE)
-                .logged(MatchEventType.MATCH_END, note = DRAW_NOTE, clockRunning = false)
+            it.copy(status = MatchStatus.FINISHED, winnerId = null, tieNote = note)
+                .logged(MatchEventType.MATCH_END, note = note, clockRunning = false)
         }
         repo.mutate(tid) { Scheduler.advance(it) }
     }

@@ -50,7 +50,7 @@ sealed class FeedItem {
         override val title: String get() = "Second half"
     }
 
-    /** [result] is "Red Hawks won", "Draw" or, after a shootout, "Won 2–1 on free throws". */
+    /** [result] is "Red Hawks won", "Draw" or, after a shootout, "Won 2–1 on free throws" / "Draw · 2–2 on free throws". */
     data class FullTime(override val id: String, val result: String) : FeedItem() {
         override val title: String get() = "Full time"
         override val subtitle: String get() = result
@@ -161,6 +161,7 @@ private fun timeLabel(period: String, clock: String): String? =
 
 private fun playerName(t: Tournament, id: String?): String = t.player(id)?.name ?: "Unknown player"
 
-private fun resultLine(t: Tournament, m: Match, winnerId: String?): String =
-    if (winnerId == null) DRAW_NOTE
-    else m.shootoutResult(t.sport)?.wonLine(t.sport) ?: "${t.teamName(winnerId)} won"
+private fun resultLine(t: Tournament, m: Match, winnerId: String?): String {
+    val shootout = m.shootoutResult(t.sport)?.takeIf { it.winnerId == winnerId }
+    return shootout?.tallyLine(t.sport) ?: if (winnerId == null) DRAW_NOTE else "${t.teamName(winnerId)} won"
+}

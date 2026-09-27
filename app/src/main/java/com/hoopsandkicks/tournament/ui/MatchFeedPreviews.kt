@@ -21,6 +21,7 @@ import com.hoopsandkicks.tournament.data.Sport
 import com.hoopsandkicks.tournament.data.Tournament
 import com.hoopsandkicks.tournament.data.buildMatchFeed
 import com.hoopsandkicks.tournament.data.shootout
+import com.hoopsandkicks.tournament.data.shootoutDrawNote
 import com.hoopsandkicks.tournament.data.shootoutNote
 
 // Previews of the viewers' match feed (hub live card and fixtures timeline). The sample data lives here (not in
@@ -118,7 +119,7 @@ private class FeedScript(val t: Tournament, var m: Match) {
         log(MatchEventType.SHOOTOUT_ATTEMPT, if (forA) m.teamAId else m.teamBId, shooter, if (made) 1 else 0)
     }
 
-    /** Full time the way the live screen records it: leader wins, level = draw, or the decided shootout. */
+    /** Full time the way the live screen records it: leader wins, level = draw, or the shootout (won, or level = draw). */
     fun end() = apply {
         val so = m.shootout(t.sport)
         val shootoutWinner = so.winnerId
@@ -129,6 +130,7 @@ private class FeedScript(val t: Tournament, var m: Match) {
                 val aWon = shootoutWinner == m.teamAId
                 shootoutWinner to shootoutNote(t.sport, if (aWon) so.madeA else so.madeB, if (aWon) so.madeB else so.madeA)
             }
+            so.endedLevel -> null to shootoutDrawNote(t.sport, so.madeA, so.madeB)
             else -> null to DRAW_NOTE
         }
         m = m.copy(status = MatchStatus.FINISHED, winnerId = winner, tieNote = note)
@@ -170,7 +172,7 @@ private fun sampleHalfTime(): FeedScript = liveScript().start()
     .score(true, 1, 2, "09:05")
     .halfTime()
 
-/** Knockout-style level full time and a free-throw shootout in progress (A made, B made, A missed). */
+/** Level full time in a league match and its single-round free-throw shootout in progress (A made, B made, A missed). */
 private fun sampleTieBreak(): FeedScript = liveScript().start()
     .score(true, 0, 2, "03:00")
     .score(false, 1, 2, "07:40")
@@ -200,6 +202,15 @@ private fun sampleFinishedShootout(): FeedScript = liveScript().start()
     .halfTime().secondHalf()
     .tieBreak()
     .attempt(true).attempt(false).attempt(true).attempt(true).attempt(false).attempt(false)
+    .end()
+
+/** League match level 2–2, then 2–2 after 3 free throws each: a draw ("Draw · 2–2 on free throws"). */
+private fun sampleShootoutDraw(): FeedScript = liveScript().start()
+    .score(true, 0, 2, "04:00")
+    .halfTime().secondHalf()
+    .score(false, 1, 2, "03:20")
+    .tieBreak()
+    .attempt(true).attempt(true).attempt(true).attempt(false).attempt(false).attempt(true)
     .end()
 
 private fun sampleFootballLive(): FeedScript = liveScript(Sport.FOOTBALL).start()
@@ -289,7 +300,7 @@ private fun PreviewViewerLiveCardHalfTime() {
     LiveCardPreview(sampleHalfTime())
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 820, name = "Viewer - live card, shootout attempts")
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 820, name = "Viewer - live card, single-round shootout attempts")
 @Composable
 private fun PreviewViewerLiveCardShootout() {
     LiveCardPreview(sampleTieBreak())
@@ -363,4 +374,10 @@ private fun PreviewViewerCardsLiveAndFallback() {
 @Composable
 private fun PreviewViewerCardsCollapsed() {
     MatchCardsPreview(sampleFinishedWin(), sampleEmpty(), expanded = false)
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF6F3EE, widthDp = 412, heightDp = 900, name = "Viewer - match card, draw after shootout timeline")
+@Composable
+private fun PreviewViewerCardShootoutDraw() {
+    MatchCardsPreview(sampleShootoutDraw())
 }

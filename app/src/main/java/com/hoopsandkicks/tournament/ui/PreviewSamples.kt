@@ -168,6 +168,7 @@ internal class PreviewLiveController(
     override fun endPeriod() {}
     override fun endMatchNow() {}
     override fun startNextPeriod() {}
+    override fun startTieBreaker() {}
     override fun shootoutAttempt(playerId: String?, made: Boolean) {}
     override fun canReopen(): Boolean = reopenable
     override fun reopen() {}
@@ -196,7 +197,8 @@ internal const val PreviewRoomCode = "K7M2QX"
 /**
  * A match put into [status], with lineups (one player each on the bench), a small scoring feed (10-7, or 10-10 when
  * [level]; 4-3 / 4-4 in football) and, for a tie-break, [shootoutAttempts] attempts (team A shoots first).
- * It comes from [previewActive] (round robin), or from [previewKnockout] when [knockout] (tie-breaks only happen there).
+ * It comes from [previewActive] (round robin), or from [previewKnockout] when [knockout] (a tie-break defaults to the
+ * knockout, with sudden death; pass knockout = false for a group single-round shootout).
  * A finished level match is a draw, or when [knockout] is won by team A in a shootout.
  * [scored] = false gives 0-0 with no feed; [rosterlessB] strips team B's players; [wholeRosterOn] leaves nobody on the bench.
  */

@@ -43,7 +43,7 @@ enum class Sport(val displayName: String, val emoji: String) {
 
     // ----- Tie-breaker: fixed per sport, never chosen by the organizer (see data/Shootout.kt) -----
 
-    /** Attempts each team takes before the shootout goes to sudden death: 3 free throws / 5 free kicks. */
+    /** Attempts per team: 3 free throws / 5 free kicks, then sudden death in knockouts or a draw in group matches. */
     val shootoutAttempts: Int get() = if (this == BASKETBALL) 3 else 5
     /** e.g. "Free-throw shootout". */
     val shootoutName: String get() = if (this == BASKETBALL) "Free-throw shootout" else "Free-kick shootout"

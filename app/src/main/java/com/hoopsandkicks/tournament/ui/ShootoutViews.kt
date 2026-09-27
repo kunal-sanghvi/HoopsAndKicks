@@ -47,7 +47,8 @@ import com.hoopsandkicks.tournament.data.resultNote
 import com.hoopsandkicks.tournament.data.shooterNames
 import com.hoopsandkicks.tournament.data.shootout
 import com.hoopsandkicks.tournament.data.shootoutResult
-import com.hoopsandkicks.tournament.data.wonLine
+import com.hoopsandkicks.tournament.data.tallyLine
+import com.hoopsandkicks.tournament.data.shootoutDrawNote
 
 // Shootout (tie-breaker) and result views shared by the match screens, the hub, fixtures and the leaderboard.
 // Everything here takes plain data (no view model, no repository), so it works for viewers and in previews.
@@ -122,8 +123,8 @@ private fun TeamShots(t: Tournament, teamId: String?, attempts: List<ShootoutAtt
 }
 
 /**
- * Read-only view of a shootout in progress, for live viewers: attempt dots per team, who shoots next, sudden death,
- * and the last attempt. [dark] matches the navy hub card.
+ * Read-only view of a shootout in progress, for live viewers: attempt dots per team, who shoots next, sudden death
+ * (knockouts) or the draw rule (group / league single round), and the last attempt. [dark] matches the navy hub card.
  */
 @Composable
 internal fun ShootoutLivePanel(t: Tournament, m: Match, dark: Boolean = false) {
@@ -147,11 +148,12 @@ internal fun ShootoutLivePanel(t: Tournament, m: Match, dark: Boolean = false) {
                 val l = if (aWon) so.madeB else so.madeA
                 "${t.teamName(winner)} won $w–$l on ${t.sport.shootoutAttemptPlural}"
             }
+            so.endedLevel -> shootoutDrawNote(t.sport, so.madeA, so.madeB)
             so.suddenDeath -> "${t.teamName(nextTeam)} to shoot · sudden death"
             else -> "${t.teamName(nextTeam)} to shoot · attempt ${so.nextAttemptNumber} of ${so.perTeam}"
         }
         Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Dot(sideColor(t, winner ?: nextTeam), 10.dp)
+            Dot(if (so.endedLevel) mute else sideColor(t, winner ?: nextTeam), 10.dp)
             Spacer(Modifier.width(8.dp))
             HText(status, 14.sp, FontWeight.Bold, if (dark) AccentDark else Accent)
         }
@@ -166,11 +168,13 @@ internal fun ShootoutLivePanel(t: Tournament, m: Match, dark: Boolean = false) {
                 "Still level after ${so.perTeam} each: one ${t.sport.shootoutAttemptSingular} at a time until one side is ahead.",
                 12.sp, FontWeight.Normal, mute
             )
+        } else if (so.singleRound && !so.over) {
+            HText("If still level after ${so.perTeam} each, the match is a draw.", 12.sp, FontWeight.Normal, mute)
         }
     }
 }
 
-/** Full-time breakdown of a match decided on the tie-breaker: tally, attempt dots and shooters. Nothing otherwise. */
+/** Full-time breakdown of a match that went to the tie-breaker (won, or a level draw): tally, attempt dots and shooters. */
 @Composable
 internal fun ShootoutResultCard(t: Tournament, m: Match) {
     val result = m.shootoutResult(t.sport) ?: return
@@ -190,7 +194,7 @@ internal fun ShootoutResultCard(t: Tournament, m: Match) {
             ShootoutRows(t, m, so, names = true)
         }
         Spacer(Modifier.height(6.dp))
-        HText(m.resultNote(t) ?: result.wonLine(t.sport), 13.sp, FontWeight.Bold, Accent)
+        HText(m.resultNote(t) ?: result.tallyLine(t.sport), 13.sp, FontWeight.Bold, Accent)
     }
 }
 
@@ -199,8 +203,9 @@ internal fun ShootoutResultCard(t: Tournament, m: Match) {
 internal fun FullTimeTieBreakNote(t: Tournament, m: Match) {
     val result = m.shootoutResult(t.sport)
     if (result != null) {
-        HText(result.wonLine(t.sport), 18.sp, FontWeight.Bold, AccentDark, align = TextAlign.Center)
-        HText("Level ${m.scoreA}–${m.scoreB} at full time", 12.sp, FontWeight.Medium, MuteDark, align = TextAlign.Center)
+        HText(result.tallyLine(t.sport), 18.sp, FontWeight.Bold, AccentDark, align = TextAlign.Center)
+        val points = if (result.winnerId == null && m.awardsPoints) " · ${t.drawPointsText()}" else ""
+        HText("Level ${m.scoreA}–${m.scoreB} at full time$points", 12.sp, FontWeight.Medium, MuteDark, align = TextAlign.Center)
     } else if (m.isDraw) {
         HText(
             if (m.awardsPoints) "Level at full time · ${t.drawPointsText()}" else "Level at full time",
@@ -230,7 +235,7 @@ internal fun FullTimeScoreCard(t: Tournament, m: Match) {
     }
 }
 
-/** Compact result line for fixtures and results lists ("Red Hawks won 3–2 on free throws", "Draw"). */
+/** Compact result line for fixtures and results lists ("Red Hawks won 3–2 on free throws", "Draw · 2–2 on free throws", "Draw"). */
 @Composable
 internal fun ResultNoteLine(t: Tournament, m: Match, modifier: Modifier = Modifier) {
     val note = m.resultNote(t) ?: return

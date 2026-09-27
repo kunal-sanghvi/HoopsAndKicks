@@ -38,7 +38,7 @@ class ShootoutResultTest {
         assertEquals(ShootoutResult("A", 2, 1), r)
         assertEquals(2, r?.madeBy("A"))
         assertEquals(1, r?.madeBy("B"))
-        assertEquals("Won 2–1 on free throws", r?.wonLine(Sport.BASKETBALL))
+        assertEquals("Won 2–1 on free throws", r?.tallyLine(Sport.BASKETBALL))
     }
 
     @Test fun shootoutResultFallsBackToTheNoteWithoutALog() {
