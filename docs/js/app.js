@@ -23,7 +23,7 @@ const state = {
   base: null, // tournament snapshot from rooms/{code}
   events: new Map(), // matchId -> MatchEvent[] (only for matches we listen to / fetched)
   t: null, // base + replayed live matches
-  tab: "home", sel: { fixtures: -1, board: 0, stats: 0 }, expanded: new Set(),
+  tab: "home", sel: { fixtures: -1, board: 0, stats: 0 }, expanded: new Set(), feedAll: new Set(),
 };
 let backend = null;
 let session = 0;
@@ -45,7 +45,7 @@ function teardown() {
   listeners.forEach((u) => u());
   listeners.clear();
   fetching.clear();
-  Object.assign(state, { base: null, t: null, events: new Map(), expanded: new Set(), tab: "home", sel: { fixtures: -1, board: 0, stats: 0 } });
+  Object.assign(state, { base: null, t: null, events: new Map(), expanded: new Set(), feedAll: new Set(), tab: "home", sel: { fixtures: -1, board: 0, stats: 0 } });
 }
 
 function setUrl(code) {
@@ -120,7 +120,7 @@ function onEvents(mine, matchId, evs) {
   scheduleRender();
 }
 
-/** A finished match's shootout attempts are only fetched when the viewer taps the card. */
+/** A finished match's event log (for its match feed) is fetched once, when the viewer taps the card. */
 async function loadFinishedEvents(matchId) {
   if (listeners.has(matchId) || state.events.has(matchId) || fetching.has(matchId)) return;
   const mine = session;
@@ -128,8 +128,9 @@ async function loadFinishedEvents(matchId) {
   try {
     const evs = await backend.getEvents(state.code, matchId);
     if (mine === session) onEvents(mine, matchId, evs);
-  } catch { /* the tally from the result note is still shown */ } finally {
+  } catch { /* the scorers from the room snapshot are still shown */ } finally {
     fetching.delete(matchId);
+    if (mine === session) scheduleRender();
   }
 }
 
@@ -211,6 +212,29 @@ function shootoutLivePanel(t, m, dark) {
   </div>`;
 }
 
+// ------------------------------------------------------------------ match feed
+
+const FEED_PREVIEW = 5;
+
+function feedRow(t, it) {
+  const marker = it.kind === "halftime" || it.kind === "fulltime" || it.kind === "shootout";
+  const lead = it.kind === "attempt" ? shotDot(it.made) : it.teamId && !marker ? dot(colorClass(t, it.teamId)) : "";
+  return html`<li class="fi k-${it.kind}"><span class="fi-time">${it.time ?? ""}</span><span class="fi-lead">${lead}</span>
+    <div class="fi-body"><div class="fi-title">${it.title}</div>${it.subtitle ? html`<div class="fi-note">${it.subtitle}</div>` : ""}</div></li>`;
+}
+
+const feedList = (t, items) => html`<ol class="feed">${items.map((it) => feedRow(t, it))}</ol>`;
+
+/** Live card: the latest few items, newest first, with a toggle for the rest. */
+function liveFeed(t, m) {
+  const items = M.buildMatchFeed(t, m);
+  if (!items.length) return "";
+  const all = state.feedAll.has(m.id);
+  return html`<div class="feed-box"><div class="feed-head">Match feed</div>
+    ${feedList(t, M.newestFirst(items, all ? Infinity : FEED_PREVIEW))}
+    ${items.length > FEED_PREVIEW ? html`<button class="feed-more" data-act="feed-all" data-mid="${m.id}">${all ? "Show less" : `Show all (${items.length})`}</button>` : ""}</div>`;
+}
+
 function resultNoteLine(t, m) {
   const note = M.resultNote(m, t);
   if (!note) return "";
@@ -235,6 +259,7 @@ function liveCard(t, m) {
     <div class="fmt">${formatSummary(M.formatForMatch(t.format, m))}</div>
     ${live ? html`<div class="score-line"><span class="score">${m.scoreA} – ${m.scoreB}</span><span class="phase" data-phase="${m.id}">${phaseText(t, m)}</span></div>` : ""}
     ${m.status === "TIEBREAK" ? shootoutLivePanel(t, m, true) : ""}
+    ${live ? liveFeed(t, m) : ""}
   </section>`;
 }
 
@@ -288,19 +313,19 @@ function homeTab(t) {
 
 function matchCard(t, m) {
   const finished = m.status === "FINISHED";
-  const hasResult = M.shootoutResult(m, t.sport) != null;
-  const canExpand = hasResult;
+  const items = m.status === "SCHEDULED" ? [] : M.buildMatchFeed(t, m);
+  // A shootout result without a loaded log still has a timeline to fetch.
+  const canExpand = items.length > 0 || M.shootoutResult(m, t.sport) != null;
   const open = state.expanded.has(m.id);
   const badgeEl = { FINISHED: badge("Final", "green"), SCHEDULED: badge("Upcoming", "line"), LIVE: badge("Live", "solid"), BREAK: badge("Break", "accent"), TIEBREAK: badge("Tie-break", "accent") }[m.status];
   const meta = [`Match ${m.number}`, slotText(m), m.label && m.label !== "Match" ? m.label : ""].filter(Boolean).join(" · ");
-  let extra = "";
-  if (m.status === "TIEBREAK") extra = shootoutLivePanel(t, m, false);
-  else if (canExpand) {
-    const so = M.shootout(m, t.sport);
-    extra = open
-      ? (so.all.length ? shootoutRows(t, m, so, true) : html`<div class="mute small">Loading…</div>`)
-      : html`<div class="mute small tap">Tap to see the ${M.sportInfo(t.sport).shootoutName.toLowerCase()}</div>`;
+  let feed = "";
+  if (canExpand) {
+    feed = !open ? html`<div class="mute small tap">Tap to see the match feed</div>`
+      : items.length ? feedList(t, items)
+      : html`<div class="mute small">${fetching.has(m.id) ? "Loading…" : "Nothing recorded yet."}</div>`;
   }
+  const extra = html`${m.status === "TIEBREAK" ? shootoutLivePanel(t, m, false) : ""}${feed}`;
   return html`<article class="card match ${canExpand ? "tappable" : ""}" ${canExpand ? html`data-act="expand" data-mid="${m.id}"` : ""}>
     <div class="match-row">
       <div class="match-teams">${teamPill(t, m.teamAId)}${teamPill(t, m.teamBId)}</div>
@@ -528,6 +553,9 @@ app.addEventListener("click", (ev) => {
   else if (act === "expand") {
     state.expanded.has(mid) ? state.expanded.delete(mid) : state.expanded.add(mid);
     if (state.expanded.has(mid)) loadFinishedEvents(mid);
+    render();
+  } else if (act === "feed-all") {
+    state.feedAll.has(mid) ? state.feedAll.delete(mid) : state.feedAll.add(mid);
     render();
   } else if (act === "leave") {
     // Keep the saved code so the join screen can offer "Resume watching" (same as the Android app).

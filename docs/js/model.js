@@ -6,6 +6,7 @@
 //   data/Shootout.kt      -> shootout
 //   data/ShootoutResult.kt-> shootoutResult, resultNote
 //   data/Scheduler.kt     -> Standings.compute, Leaderboards.overall/players, expectedStages
+//   (match feed)          -> buildMatchFeed: the Android viewer's feed uses the same wording
 // Keep them in step when the Android side changes.
 
 export const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -403,6 +404,111 @@ export function shooterNames(t, attempts) {
 
 /** True when a finished match's shootout can be shown attempt by attempt. */
 export const hasShootoutDetail = (m, t) => shootoutResult(m, t.sport) != null && shootout(m, t.sport).all.length > 0;
+
+// ------------------------------------------------------------------ match feed (wording shared with the Android viewer)
+
+/** "1 03:12" from a score's period tag and clock text; null when there is no clock. */
+const feedTime = (period, clock) => (clock ? `${period ?? ""} ${clock}`.trim() : null);
+
+/** Line under "Full time": "Red won", "Draw", or the shootout note without its " · tie-breaker recorded" tail. */
+function fullTimeResult(t, winnerId, note) {
+  if (winnerId == null) return DRAW_NOTE;
+  const shootoutNote = (note ?? "").split(" · ")[0].trim();
+  return shootoutNote || `${teamName(t, winnerId)} won`;
+}
+
+/**
+ * The match's story as feed items, oldest first. Each item: { id, kind, title, subtitle, time, teamId, ... } with
+ * kind one of score | sub | halftime | fulltime | shootout | attempt. Score items also carry playerName (null when
+ * unknown), points and the running scoreA/scoreB after that score. Built from the event log (voided entries
+ * dropped); if the log holds no SCORE entries (not loaded yet, or older data) the scorers come from m.events.
+ */
+export function buildMatchFeed(t, m) {
+  const sp = sportInfo(t.sport);
+  const football = t.sport === "FOOTBALL";
+  const log = [...(m.log ?? [])].sort((a, b) => a.seq - b.seq);
+  const voided = new Set(log.filter((e) => e.type === "VOID" && e.voidsSeq != null).map((e) => e.voidsSeq));
+  const useLog = log.some((e) => e.type === "SCORE");
+  const name = (id) => player(t, id)?.name ?? null;
+  const items = [];
+  let scoreA = 0;
+  let scoreB = 0;
+  const addScore = (s) => {
+    if (s.teamId === m.teamAId) scoreA += s.points; else scoreB += s.points;
+    const who = name(s.playerId);
+    const tn = teamName(t, s.teamId);
+    items.push({
+      id: s.id, kind: "score", teamId: s.teamId, playerName: who, points: s.points, scoreA, scoreB,
+      time: feedTime(s.period, s.clock),
+      title: football ? `Goal · ${who ?? tn}` : `${who ?? tn} +${s.points}`,
+      subtitle: `${tn} · ${scoreA}–${scoreB}`,
+    });
+  };
+  if (!useLog) for (const s of m.events) addScore(s);
+
+  let shootoutAt = -1; // index of the open shootout header while the match is in the tie-break
+  for (const e of log) {
+    if (voided.has(e.seq)) continue;
+    switch (e.type) {
+      case "SCORE": {
+        if (!useLog) break;
+        const note = e.note ?? "";
+        addScore({
+          id: e.id, teamId: e.teamId ?? "", playerId: e.playerId, points: e.points ?? 0,
+          period: substringBefore(note, " "), clock: substringAfter(note, " "),
+        });
+        break;
+      }
+      case "VOID":
+        // Undoing a score from the tie-break sends the match back to play (as in replay): drop that shootout.
+        if (shootoutAt >= 0 && log.some((x) => x.type === "SCORE" && x.seq === e.voidsSeq)) {
+          items.splice(shootoutAt);
+          shootoutAt = -1;
+        }
+        break;
+      case "SUB":
+        if (e.inPlayerId == null || e.outPlayerId == null) break;
+        items.push({
+          id: e.id, kind: "sub", teamId: e.teamId, time: null,
+          title: `${name(e.inPlayerId) ?? "?"} on for ${name(e.outPlayerId) ?? "?"}`, subtitle: teamName(t, e.teamId),
+        });
+        break;
+      case "BREAK_START":
+        items.push({ id: e.id, kind: "halftime", teamId: null, time: null, title: "Half-time", subtitle: null });
+        break;
+      case "TIEBREAK_START":
+        shootoutAt = items.length;
+        items.push({ id: e.id, kind: "shootout", teamId: null, time: null, title: sp.shootoutName, subtitle: null });
+        break;
+      case "SHOOTOUT_ATTEMPT": {
+        const made = (e.points ?? 0) > 0;
+        const tn = teamName(t, e.teamId);
+        items.push({
+          id: e.id, kind: "attempt", teamId: e.teamId, playerName: name(e.playerId), made, time: null,
+          title: `${name(e.playerId) ?? tn} ${made ? sp.shootoutMadeLabel.toLowerCase() : "missed"}`, subtitle: tn,
+        });
+        break;
+      }
+      case "MATCH_END":
+        shootoutAt = -1;
+        items.push({
+          id: e.id, kind: "fulltime", teamId: e.teamId, time: null, title: "Full time",
+          subtitle: fullTimeResult(t, e.teamId, e.note),
+        });
+        break;
+      case "REOPEN": {
+        const last = items.findLastIndex((x) => x.kind === "fulltime");
+        if (last >= 0) items.splice(last, 1);
+        break;
+      }
+      default: break; // MATCH_START, PERIOD_START, PAUSE, RESUME, BREAK_END: not worth a line
+    }
+  }
+  return items;
+}
+
+/** Feed items newest first, at most [limit] of them (the live card shows the latest few). */
+export const newestFirst = (items, limit = Infinity) => items.slice().reverse().slice(0, limit);
 
 // ------------------------------------------------------------------ standings + leaderboards (Scheduler.kt)
 
