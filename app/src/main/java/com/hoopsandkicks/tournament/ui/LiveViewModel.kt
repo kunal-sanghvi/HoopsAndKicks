@@ -36,6 +36,9 @@ interface LiveController {
     val running: Boolean
     val timeUp: Boolean
 
+    /** True after "Edit scores" or an undo out of a tie-breaker: the period is over but scores may still be corrected. */
+    val editingScores: Boolean
+
     /** Scorer sheet state: which side is picking a scorer (true = team A) and for how many points. */
     val sheetForA: Boolean?
     val sheetPoints: Int
@@ -76,6 +79,8 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
     override var running by mutableStateOf(false)
         private set
     override var timeUp by mutableStateOf(false)
+        private set
+    override var editingScores by mutableStateOf(false)
         private set
 
     /** Scorer sheet state: which side is picking a scorer (true = team A) and for how many points. */
@@ -142,6 +147,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
                             endPeriod()
                         } else {
                             timeUp = true
+                            sheetForA = null
                         }
                     } else if (ticks % 50 == 0) {
                         persistClock()
@@ -222,6 +228,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
         val t = tournament() ?: return
         val m = t.match(mid) ?: return
         if (m.status != MatchStatus.LIVE) return
+        if (timeUp && !editingScores) return
         val teamId = (if (forA) m.teamAId else m.teamBId) ?: return
         val f = fmt(t, m)
         // clockMs counts DOWN (time remaining in the period), but a scoring feed should read as time
@@ -278,6 +285,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
             clockMs = 0L
             running = false
             timeUp = true
+            editingScores = true
         }
         val wasTieBreak = m.status == MatchStatus.TIEBREAK
         repo.updateMatch(tid, mid) {
@@ -342,6 +350,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
         if (m.status != MatchStatus.LIVE) return
         val f = fmt(t, m)
         running = false
+        editingScores = false
         sheetForA = null
         subForA = null
         if (f.type == FormatType.HALVES && m.period < f.periods()) {
@@ -361,6 +370,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
     /** Ends the match now (or goes straight to the shootout tie-breaker if scores are level). */
     override fun endMatchNow() {
         running = false
+        editingScores = false
         sheetForA = null
         subForA = null
         endRegulation()
@@ -479,6 +489,7 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
         clockMs = 0L
         running = false
         timeUp = true
+        editingScores = true
     }
 
     override fun onCleared() {

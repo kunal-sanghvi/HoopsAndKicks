@@ -168,10 +168,10 @@ private fun LiveContent(t: Tournament, m: Match, vm: LiveController, onExit: () 
                         )
                     }
                 }
-                // Paused (but not "time up", which still needs End half/End game to be tappable) locks
-                // everything except Sub: an admin who steps away mid-play shouldn't be able to add a
-                // basket or end the period from a paused clock — only swap a player.
-                val scoringLocked = !vm.running && !vm.timeUp
+                // Scoring is only open while the clock runs. A paused clock or a period that has ended (time up,
+                // waiting for End half / End game) locks it; only "Edit scores" or an undo out of a tie-breaker
+                // reopens it so a mistake can still be corrected. Sub stays available.
+                val scoringLocked = !vm.running && !(vm.timeUp && vm.editingScores)
                 Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     TeamScorePanel(t, m, true, options, vm, Modifier.weight(1f), scoringLocked)
                     TeamScorePanel(t, m, false, options, vm, Modifier.weight(1f), scoringLocked)
@@ -691,7 +691,21 @@ private fun PreviewLivePaused() {
     HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 443_000L), onExit = {}) }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - time up, scores level")
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - end of 2nd half, scoring locked")
+@Composable
+private fun PreviewLiveEndOfSecondHalf() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, period = 2)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 0L, timeUp = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - after Edit scores, scoring open")
+@Composable
+private fun PreviewLiveEditingScores() {
+    val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true)
+    HoopsTheme { LiveContent(t, m, PreviewLiveController(clockMs = 0L, timeUp = true, editingScores = true), onExit = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Live - time up, scoring locked")
 @Composable
 private fun PreviewLiveTimeUp() {
     val (t, m) = previewMatchIn(MatchStatus.LIVE, level = true)

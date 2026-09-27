@@ -149,6 +149,7 @@ internal class PreviewLiveController(
     override val clockMs: Long = 0L,
     override val running: Boolean = false,
     override val timeUp: Boolean = false,
+    override val editingScores: Boolean = false,
     override val sheetForA: Boolean? = null,
     override val sheetPoints: Int = 0,
     override val subForA: Boolean? = null,
