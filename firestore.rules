@@ -1,13 +1,16 @@
 rules_version = '2';
 
 // Security rules for optional live hosting (paste into Firebase console > Firestore > Rules).
-// Anyone with a room code can read; only the host (anonymous uid stored as hostUid) can write,
+// Anyone with a room code can read that one room; only the host (anonymous uid stored as hostUid) can write,
 // and match events are create-only so the log stays append-only.
+// Rooms can be fetched by code (get) but not listed, so the web viewer's public API key can't be used to enumerate
+// every room. The app and the web viewer only ever read a single room document, so nothing depends on list.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     match /rooms/{code} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if false;
 
       allow create: if request.auth != null
                     && request.resource.data.hostUid == request.auth.uid;
