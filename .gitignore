@@ -13,3 +13,6 @@
 /keystore.properties
 *.jks
 *.keystore
+
+/.claude/
+/.playwright-mcp/
