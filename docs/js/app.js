@@ -217,7 +217,7 @@ function shootoutLivePanel(t, m, dark) {
 const FEED_PREVIEW = 5;
 
 function feedRow(t, it) {
-  const marker = it.kind === "halftime" || it.kind === "fulltime" || it.kind === "shootout";
+  const marker = it.kind === "halftime" || it.kind === "secondhalf" || it.kind === "fulltime" || it.kind === "shootout";
   const lead = it.kind === "attempt" ? shotDot(it.made) : it.teamId && !marker ? dot(colorClass(t, it.teamId)) : "";
   return html`<li class="fi k-${it.kind}"><span class="fi-time">${it.time ?? ""}</span><span class="fi-lead">${lead}</span>
     <div class="fi-body"><div class="fi-title">${it.title}</div>${it.subtitle ? html`<div class="fi-note">${it.subtitle}</div>` : ""}</div></li>`;

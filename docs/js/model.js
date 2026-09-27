@@ -447,6 +447,7 @@ export function buildMatchFeed(t, m) {
   if (!useLog) for (const s of m.events) addScore(s);
 
   let shootoutAt = -1; // index of the open shootout header while the match is in the tie-break
+  let secondHalfShown = false;
   for (const e of log) {
     if (voided.has(e.seq)) continue;
     switch (e.type) {
@@ -470,11 +471,16 @@ export function buildMatchFeed(t, m) {
         if (e.inPlayerId == null || e.outPlayerId == null) break;
         items.push({
           id: e.id, kind: "sub", teamId: e.teamId, time: null,
-          title: `${name(e.inPlayerId) ?? "?"} on for ${name(e.outPlayerId) ?? "?"}`, subtitle: teamName(t, e.teamId),
+          title: `${name(e.inPlayerId) ?? "Unknown player"} on for ${name(e.outPlayerId) ?? "Unknown player"}`, subtitle: teamName(t, e.teamId),
         });
         break;
       case "BREAK_START":
         items.push({ id: e.id, kind: "halftime", teamId: null, time: null, title: "Half-time", subtitle: null });
+        break;
+      case "PERIOD_START":
+        if (secondHalfShown || e.note != null) break;
+        secondHalfShown = true;
+        items.push({ id: e.id, kind: "secondhalf", teamId: null, time: null, title: "Second half", subtitle: null });
         break;
       case "TIEBREAK_START":
         shootoutAt = items.length;
@@ -501,7 +507,7 @@ export function buildMatchFeed(t, m) {
         if (last >= 0) items.splice(last, 1);
         break;
       }
-      default: break; // MATCH_START, PERIOD_START, PAUSE, RESUME, BREAK_END: not worth a line
+      default: break; // MATCH_START, PAUSE, RESUME, BREAK_END: not worth a line
     }
   }
   return items;

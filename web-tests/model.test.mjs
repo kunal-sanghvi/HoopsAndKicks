@@ -208,13 +208,13 @@ test("feed: chronological, running score, halftime, subs, noise skipped", () => 
     ev("BREAK_START", { clockSec: 300 }), ev("BREAK_END"), ev("PERIOD_START", { clockSec: 720 }),
     ev("SCORE", { teamId: "a", playerId: "pa", points: 1, note: "2 09:05" }),
   ]);
-  assert.deepEqual(items.map((i) => i.kind), ["score", "sub", "score", "halftime", "score"]);
-  assert.deepEqual(items.map((i) => i.title), ["Ana +3", "Ana on for Ben", "Ben +2", "Half-time", "Ana +1"]);
-  assert.deepEqual(items.map((i) => i.subtitle), ["Red · 3–0", "Blue", "Blue · 3–2", null, "Red · 4–2"]);
-  assert.deepEqual([items[0].time, items[4].time, items[1].time], ["1 11:40", "2 09:05", null]);
-  assert.deepEqual([items[4].scoreA, items[4].scoreB, items[4].points, items[4].playerName], [4, 2, 1, "Ana"]);
-  assert.deepEqual(M.newestFirst(items, 2).map((i) => i.title), ["Ana +1", "Half-time"]);
-  assert.equal(M.newestFirst(items).length, 5);
+  assert.deepEqual(items.map((i) => i.kind), ["score", "sub", "score", "halftime", "secondhalf", "score"]);
+  assert.deepEqual(items.map((i) => i.title), ["Ana +3", "Ana on for Ben", "Ben +2", "Half-time", "Second half", "Ana +1"]);
+  assert.deepEqual(items.map((i) => i.subtitle), ["Red · 3–0", "Blue", "Blue · 3–2", null, null, "Red · 4–2"]);
+  assert.deepEqual([items[0].time, items[5].time, items[1].time], ["1 11:40", "2 09:05", null]);
+  assert.deepEqual([items[5].scoreA, items[5].scoreB, items[5].points, items[5].playerName], [4, 2, 1, "Ana"]);
+  assert.deepEqual(M.newestFirst(items, 2).map((i) => i.title), ["Ana +1", "Second half"]);
+  assert.equal(M.newestFirst(items).length, 6);
   assert.equal(items[0].title, "Ana +3"); // newestFirst does not reorder the original
 });
 
@@ -279,4 +279,13 @@ test("feed: football wording", () => {
     ["Goal · Ana", "Red · 1–0", "1 03:12"], ["Goal · Blue", "Blue · 1–1", "2 01:00"],
     ["Free-kick shootout", null, null], ["Ana scored", "Red", null], ["Ben missed", "Blue", null],
   ]);
+});
+
+test("feed: a substitution with players that are not on the roster says Unknown player", () => {
+  seq = 0;
+  const items = feedOf([
+    ev("MATCH_START", { clockSec: 720 }), ev("RESUME"),
+    ev("SUB", { teamId: "a", outPlayerId: "ghost1", inPlayerId: "ghost2" }),
+  ]);
+  assert.equal(items[0].title, "Unknown player on for Unknown player");
 });

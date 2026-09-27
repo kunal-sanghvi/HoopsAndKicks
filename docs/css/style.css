@@ -113,13 +113,13 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .fi-title { font-weight: 700; font-size: 14px; overflow-wrap: anywhere; }
 .fi-note { font-size: 12px; font-weight: 500; color: var(--mute); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .k-sub { min-height: 34px; } .k-sub .fi-title { font-weight: 500; font-size: 13px; color: var(--mute); } .k-sub .fi-note { font-size: 11px; }
-.k-halftime .fi-title, .k-fulltime .fi-title, .k-shootout .fi-title { font-size: 12px; text-transform: uppercase; letter-spacing: .3px; color: var(--accent); }
+.k-halftime .fi-title, .k-secondhalf .fi-title, .k-fulltime .fi-title, .k-shootout .fi-title { font-size: 12px; text-transform: uppercase; letter-spacing: .3px; color: var(--accent); }
 .k-fulltime .fi-note { font-size: 13px; font-weight: 700; color: var(--ink); }
 .feed-more { align-self: flex-start; background: none; border: 0; padding: 8px 0 0; min-height: 36px; font-size: 13px; font-weight: 700; color: var(--accent-dark); }
 .feed-more:focus-visible { outline: 3px solid var(--accent-dark); outline-offset: 2px; }
 .live-card .fi + .fi { border-top-color: var(--navy3); }
 .live-card .fi-time, .live-card .fi-note, .live-card .k-sub .fi-title { color: var(--mute-dark); }
-.live-card .k-halftime .fi-title, .live-card .k-fulltime .fi-title, .live-card .k-shootout .fi-title { color: var(--accent-dark); }
+.live-card .k-halftime .fi-title, .live-card .k-secondhalf .fi-title, .live-card .k-fulltime .fi-title, .live-card .k-shootout .fi-title { color: var(--accent-dark); }
 .live-card .k-fulltime .fi-note { color: var(--on-dark); }
 
 /* ---- tiles, matches ---- */
