@@ -93,6 +93,7 @@ import com.hoopsandkicks.tournament.data.Sport
 import com.hoopsandkicks.tournament.data.StageType
 import com.hoopsandkicks.tournament.data.TStatus
 import com.hoopsandkicks.tournament.data.Tournament
+import com.hoopsandkicks.tournament.data.buildMatchFeed
 import com.hoopsandkicks.tournament.data.canStart
 import com.hoopsandkicks.tournament.data.computeDisplaySeconds
 import com.hoopsandkicks.tournament.data.estimatedEndAt
@@ -507,6 +508,7 @@ internal fun UpNextCard(t: Tournament, m: Match, live: Boolean, onOpenMatch: (St
         if (readOnly) {
             if (live) LiveScoreLine(t, m)
             if (m.status == MatchStatus.TIEBREAK) ShootoutLivePanel(t, m, dark = true)
+            if (live) LiveMatchFeed(t, m)
             if (pastPlan) PastPlanRow(onFix = null, dark = true)
         } else {
             if (pastPlan) PastPlanRow(onFix = { fixing = true }, dark = true)
@@ -941,9 +943,10 @@ fun MatchCard(
     // Tentative slot ends after the tournament's end time: shown as a note only, the match can still be started.
     val pastPlan = m.status == MatchStatus.SCHEDULED && m.exceedsWindow(t)
     var fixing by remember { mutableStateOf(false) }
-    // Viewers can't open the match screens; a tap expands the finished shootout in place instead.
+    // Viewers can't open the match screens; a tap expands the match feed (or a finished shootout) in place instead.
     var expanded by remember(m.id) { mutableStateOf(shootoutExpanded) }
-    val canExpand = readOnly && m.hasShootoutDetail(t)
+    val feed = if (readOnly) buildMatchFeed(t, m) else emptyList()
+    val canExpand = readOnly && (feed.isNotEmpty() || m.hasShootoutDetail(t))
     HCard(modifier = Modifier.clickable(enabled = canExpand || (!readOnly && m.teamAId != null && m.teamBId != null)) {
         if (readOnly) expanded = !expanded else onOpenMatch(m.id, m.status == MatchStatus.SCHEDULED)
     }, padding = 14.dp) {
@@ -990,7 +993,8 @@ fun MatchCard(
             if (m.label.isNotEmpty() && m.label != "Match") append(" · ${m.label}")
         }
         HText(meta, 12.sp, FontWeight.Normal, Mute)
-        MatchCardShootout(t, m, readOnly, expanded)
+        MatchCardShootout(t, m, readOnly, expanded, feedShown = feed.isNotEmpty())
+        MatchCardFeed(t, feed, expanded)
         if (pastPlan) {
             Spacer(Modifier.height(8.dp))
             PastPlanRow(onFix = if (readOnly) null else ({ fixing = true }))

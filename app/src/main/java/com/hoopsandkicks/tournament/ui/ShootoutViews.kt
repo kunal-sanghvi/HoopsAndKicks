@@ -244,16 +244,17 @@ internal fun Match.hasShootoutDetail(t: Tournament): Boolean =
 
 /**
  * The tie-breaker part of a match card: the result line, and for viewers ([readOnly]) the live shootout while it is
- * running, or the finished shootout when [expanded] (a tap on the card toggles it).
+ * running, or the finished shootout when [expanded] (a tap on the card toggles it). With [feedShown] the match feed
+ * already lists every attempt, so the finished shootout isn't repeated here.
  */
 @Composable
-internal fun MatchCardShootout(t: Tournament, m: Match, readOnly: Boolean, expanded: Boolean) {
+internal fun MatchCardShootout(t: Tournament, m: Match, readOnly: Boolean, expanded: Boolean, feedShown: Boolean = false) {
     ResultNoteLine(t, m, Modifier.padding(top = 4.dp))
     if (!readOnly) return
     if (m.status == MatchStatus.TIEBREAK) {
         Spacer(Modifier.height(8.dp))
         ShootoutLivePanel(t, m)
-    } else if (m.hasShootoutDetail(t)) {
+    } else if (!feedShown && m.hasShootoutDetail(t)) {
         if (expanded) {
             Spacer(Modifier.height(4.dp))
             ShootoutRows(t, m, m.shootout(t.sport), names = true)
