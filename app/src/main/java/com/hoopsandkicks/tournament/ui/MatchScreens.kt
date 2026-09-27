@@ -71,6 +71,7 @@ import com.hoopsandkicks.tournament.data.MatchEventType
 import com.hoopsandkicks.tournament.data.MatchStatus
 import com.hoopsandkicks.tournament.data.Sport
 import com.hoopsandkicks.tournament.data.Tournament
+import com.hoopsandkicks.tournament.data.eligibleShooters
 import com.hoopsandkicks.tournament.data.shootout
 import com.hoopsandkicks.tournament.data.shootoutResult
 
@@ -475,9 +476,9 @@ private fun TieBreakerContent(t: Tournament, m: Match, vm: LiveController) {
     val shooterTeamId = if (shootA) m.teamAId else m.teamBId
     val shooterColor = teamColorOf(t, shooterTeamId)
     val roster = t.team(shooterTeamId)?.playerIds ?: emptyList()
-    val taken = (if (shootA) so.attemptsA else so.attemptsB).groupingBy { it.playerId }.eachCount()
-    // Suggest a rotation (fewest attempts so far, roster order); the organizer can pick anyone.
-    val suggested = roster.minByOrNull { taken[it] ?: 0 }
+    // Nobody shoots again until the whole roster has shot; the first eligible player is pre-selected.
+    val eligible = so.eligibleShooters(shootA, roster)
+    val suggested = eligible.firstOrNull()
     var shooter by rememberSaveable(so.all.size, shooterTeamId) { mutableStateOf(suggested) }
     val hasAttempts = so.all.isNotEmpty()
 
@@ -543,12 +544,13 @@ private fun TieBreakerContent(t: Tournament, m: Match, vm: LiveController) {
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     roster.forEach { pid ->
-                        val on = shooter == pid
+                        val canShoot = pid in eligible
+                        val on = shooter == pid && canShoot
                         Row(
                             Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(12.dp))
-                                .background(if (on) AccentSoft else Surface)
+                                .background(if (on) AccentSoft else if (canShoot) Surface else Bg)
                                 .border(BorderStroke(if (on) 2.dp else 1.dp, if (on) Accent else Line), RoundedCornerShape(12.dp))
-                                .clickable { shooter = pid }.padding(horizontal = 12.dp),
+                                .clickable(enabled = canShoot) { shooter = pid }.padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
@@ -557,9 +559,13 @@ private fun TieBreakerContent(t: Tournament, m: Match, vm: LiveController) {
                                 contentAlignment = Alignment.Center
                             ) { if (on) Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(12.dp)) }
                             Spacer(Modifier.width(10.dp))
-                            HText(t.player(pid)?.name ?: "?", 15.sp, FontWeight.Bold, Ink, Modifier.weight(1f), maxLines = 1)
+                            HText(t.player(pid)?.name ?: "?", 15.sp, FontWeight.Bold, if (canShoot) Ink else Mute, Modifier.weight(1f), maxLines = 1)
+                            if (!canShoot) HText("Already shot", 12.sp, FontWeight.Medium, Mute)
                         }
                     }
+                }
+                if (roster.isNotEmpty()) {
+                    HText("Everyone on the team shoots once before anyone shoots again.", 12.sp, FontWeight.Normal, Mute)
                 }
             }
             HText(
@@ -570,14 +576,14 @@ private fun TieBreakerContent(t: Tournament, m: Match, vm: LiveController) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Line))
         BottomBar {
             // A shooter must be picked when the team has players; a team without a roster shoots as the team.
-            val ready = roster.isEmpty() || shooter?.let { it in roster } == true
+            val ready = roster.isEmpty() || shooter?.let { it in eligible } == true
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 SecondaryButton(
-                    "Missed", { vm.shootoutAttempt(shooter?.takeIf { it in roster }, made = false) },
+                    "Missed", { vm.shootoutAttempt(shooter?.takeIf { it in eligible }, made = false) },
                     Modifier.weight(1f), icon = Icons.Filled.Close, enabled = ready
                 )
                 PrimaryButton(
-                    t.sport.shootoutMadeLabel, { vm.shootoutAttempt(shooter?.takeIf { it in roster }, made = true) },
+                    t.sport.shootoutMadeLabel, { vm.shootoutAttempt(shooter?.takeIf { it in eligible }, made = true) },
                     Modifier.weight(1f), icon = Icons.Filled.Check, enabled = ready, color = Green
                 )
             }
@@ -717,6 +723,20 @@ private fun PreviewHalftime() {
 @Composable
 private fun PreviewTieBreaker() {
     val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 3)
+    HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Tie-breaker - only one player left to shoot")
+@Composable
+private fun PreviewTieBreakerOneLeft() {
+    val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 4)
+    HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF14171F, widthDp = PvW, heightDp = PvH, name = "Admin - Tie-breaker - everyone has shot, new rotation")
+@Composable
+private fun PreviewTieBreakerNewRotation() {
+    val (t, m) = previewMatchIn(MatchStatus.TIEBREAK, level = true, shootoutAttempts = 6)
     HoopsTheme { TieBreakerContent(t, m, PreviewLiveController()) }
 }
 

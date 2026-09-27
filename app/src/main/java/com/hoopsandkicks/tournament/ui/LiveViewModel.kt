@@ -20,6 +20,7 @@ import com.hoopsandkicks.tournament.data.ScoreEvent
 import com.hoopsandkicks.tournament.data.Scheduler
 import com.hoopsandkicks.tournament.data.TStatus
 import com.hoopsandkicks.tournament.data.Tournament
+import com.hoopsandkicks.tournament.data.eligibleShooters
 import com.hoopsandkicks.tournament.data.newId
 import com.hoopsandkicks.tournament.data.shootout
 import com.hoopsandkicks.tournament.data.shootoutNote
@@ -415,6 +416,8 @@ class LiveViewModel(private val tid: String, private val mid: String) : ViewMode
         val before = m.shootout(t.sport)
         if (before.decided) return
         val teamId = (if (before.nextIsA) m.teamAId else m.teamBId) ?: return
+        val roster = t.team(teamId)?.playerIds ?: emptyList()
+        if (roster.isNotEmpty() && playerId !in before.eligibleShooters(before.nextIsA, roster)) return
         repo.updateMatch(tid, mid) {
             it.logged(MatchEventType.SHOOTOUT_ATTEMPT, teamId = teamId, playerId = playerId, points = if (made) 1 else 0)
         }

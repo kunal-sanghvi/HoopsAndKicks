@@ -62,6 +62,18 @@ fun Match.shootout(sport: Sport): ShootoutState {
     return ShootoutState(perTeam, a, b, shootoutWinner(a, b, perTeam))
 }
 
+/**
+ * Players from [roster] who may take a team's next attempt: nobody shoots again until everyone on the roster has
+ * shot, so these are the players with the fewest attempts so far. Empty for an empty roster (the team then shoots
+ * as a whole). An undone attempt is not counted (see [shootout]), so undo frees its shooter again.
+ */
+fun ShootoutState.eligibleShooters(teamIsA: Boolean, roster: List<String>): List<String> {
+    if (roster.isEmpty()) return emptyList()
+    val taken = (if (teamIsA) attemptsA else attemptsB).mapNotNull { it.playerId }.groupingBy { it }.eachCount()
+    val fewest = roster.minOf { taken[it] ?: 0 }
+    return roster.filter { (taken[it] ?: 0) == fewest }
+}
+
 private fun shootoutWinner(a: List<ShootoutAttempt>, b: List<ShootoutAttempt>, perTeam: Int): String? {
     val madeA = a.count { it.made }
     val madeB = b.count { it.made }
