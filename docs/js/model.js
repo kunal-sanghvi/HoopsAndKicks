@@ -337,7 +337,11 @@ function shootoutWinner(a, b, perTeam) {
   return null;
 }
 
-/** The shootout for the current tie-break: attempts after the latest TIEBREAK_START, minus voided ones. */
+/**
+ * The shootout for the current tie-break: attempts after the latest TIEBREAK_START, minus voided ones.
+ * Knockout-like matches go to sudden death when level after perTeam each. A points-awarding (group / league) match
+ * is a single round: level after perTeam each ends as a draw (singleRound, exhaustedLevel).
+ */
 export function shootout(m, sport) {
   const perTeam = sportInfo(sport).shootoutAttempts;
   let start = null;
@@ -359,11 +363,15 @@ export function shootout(m, sport) {
   const nextAttemptNumber = (nextIsA ? attemptsA.length : attemptsB.length) + 1;
   const round = Math.max(attemptsA.length, attemptsB.length);
   const next = winnerId == null && attemptsA.length === attemptsB.length ? round + 1 : round;
+  const singleRound = awardsPoints(m);
+  const exhaustedLevel = singleRound && winnerId == null && attemptsA.length >= perTeam && attemptsB.length >= perTeam;
   return {
     perTeam, attemptsA, attemptsB, winnerId, madeA: made(attemptsA), madeB: made(attemptsB),
     all: [...attemptsA, ...attemptsB].sort((a, b) => a.seq - b.seq),
-    decided: winnerId != null, nextIsA, nextAttemptNumber, suddenDeath: nextAttemptNumber > perTeam,
-    slots: Math.max(perTeam, next),
+    decided: winnerId != null, nextIsA, nextAttemptNumber, singleRound, exhaustedLevel,
+    suddenDeath: !singleRound && nextAttemptNumber > perTeam,
+    // round (not next) for a single round: never an empty extra slot, but a log from before the rule change still fits.
+    slots: Math.max(perTeam, singleRound ? round : next),
   };
 }
 
@@ -384,13 +392,25 @@ export function shootoutResult(m, sport) {
   return { winnerId: winner, winnerMade: Number(tally[1]), loserMade: Number(tally[2]) };
 }
 
+const DRAW_TALLY = /^Draw · (\d+)\s*[–-]\s*(\d+)/;
+
+/** Tally { madeA, madeB } of a finished group / league match that stayed level through its shootout, else null. */
+export function shootoutDraw(m, sport) {
+  if (!isDraw(m)) return null;
+  const so = shootout(m, sport);
+  if (so.exhaustedLevel) return { madeA: so.madeA, madeB: so.madeB };
+  const tally = DRAW_TALLY.exec(m.tieNote ?? "");
+  return tally ? { madeA: Number(tally[1]), madeB: Number(tally[2]) } : null; // log not loaded: read the note
+}
+
 export const madeBy = (res, teamId) => (teamId === res.winnerId ? res.winnerMade : res.loserMade);
 export const wonLine = (res, sport) => `Won ${res.winnerMade}–${res.loserMade} on ${sportInfo(sport).shootoutAttemptPlural}`;
+export const drawLine = (d, sport) => `${DRAW_NOTE} · ${d.madeA}–${d.madeB} on ${sportInfo(sport).shootoutAttemptPlural}`;
 
-/** "Red Hawks won 3–2 on free throws", "Draw", any other stored note, else null. */
+/** "Red Hawks won 3–2 on free throws", "Draw · 2–2 on free throws", "Draw", any other stored note, else null. */
 export function resultNote(m, t) {
   if (m.status !== "FINISHED" || m.bye) return null;
-  if (isDraw(m)) return DRAW_NOTE;
+  if (isDraw(m)) { const d = shootoutDraw(m, t.sport); return d ? drawLine(d, t.sport) : DRAW_NOTE; }
   const so = shootoutResult(m, t.sport);
   if (so) return `${teamName(t, so.winnerId)} won ${so.winnerMade}–${so.loserMade} on ${sportInfo(t.sport).shootoutAttemptPlural}`;
   return m.tieNote || null;
@@ -403,17 +423,21 @@ export function shooterNames(t, attempts) {
 }
 
 /** True when a finished match's shootout can be shown attempt by attempt. */
-export const hasShootoutDetail = (m, t) => shootoutResult(m, t.sport) != null && shootout(m, t.sport).all.length > 0;
+export const hasShootoutDetail = (m, t) =>
+  (shootoutResult(m, t.sport) != null || shootoutDraw(m, t.sport) != null) && shootout(m, t.sport).all.length > 0;
 
 // ------------------------------------------------------------------ match feed (wording shared with the Android viewer)
 
 /** "1 03:12" from a score's period tag and clock text; null when there is no clock. */
 const feedTime = (period, clock) => (clock ? `${period ?? ""} ${clock}`.trim() : null);
 
-/** Line under "Full time": "Red won", "Draw", or the shootout note without its " · tie-breaker recorded" tail. */
+/**
+ * Line under "Full time": "Red won", "Draw", or the shootout note without its " · tie-breaker recorded" tail
+ * ("Won 2–1 on free throws", "Draw · 2–2 on free throws").
+ */
 function fullTimeResult(t, winnerId, note) {
-  if (winnerId == null) return DRAW_NOTE;
-  const shootoutNote = (note ?? "").split(" · ")[0].trim();
+  const shootoutNote = (note ?? "").split(" · tie-breaker")[0].trim();
+  if (winnerId == null) return DRAW_TALLY.test(shootoutNote) ? shootoutNote : DRAW_NOTE;
   return shootoutNote || `${teamName(t, winnerId)} won`;
 }
 

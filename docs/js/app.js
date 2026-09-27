@@ -197,8 +197,12 @@ function shootoutLivePanel(t, m, dark) {
   if (so.winnerId != null) {
     const aWon = so.winnerId === m.teamAId;
     status = `${M.teamName(t, so.winnerId)} won ${aWon ? so.madeA : so.madeB}–${aWon ? so.madeB : so.madeA} on ${sp.shootoutAttemptPlural}`;
-  } else if (so.suddenDeath) status = `${M.teamName(t, nextTeam)} to shoot · sudden death`;
+  } else if (so.exhaustedLevel) status = `Level ${so.madeA}–${so.madeB} after ${so.perTeam} each · the match is a draw`;
+  else if (so.suddenDeath) status = `${M.teamName(t, nextTeam)} to shoot · sudden death`;
   else status = `${M.teamName(t, nextTeam)} to shoot · attempt ${so.nextAttemptNumber} of ${so.perTeam}`;
+  let foot = "";
+  if (so.suddenDeath && so.winnerId == null) foot = `Still level after ${so.perTeam} each: one ${sp.shootoutAttemptSingular} at a time until one side is ahead.`;
+  else if (so.singleRound && so.winnerId == null && !so.exhaustedLevel) foot = `Group match: still level after ${so.perTeam} each means a draw.`;
   const last = so.all[so.all.length - 1];
   const lastLine = last
     ? `Last: ${M.player(t, last.playerId)?.name ?? M.teamName(t, last.teamId)} (${last.made ? sp.shootoutMadeLabel.toLowerCase() : "missed"})`
@@ -206,9 +210,9 @@ function shootoutLivePanel(t, m, dark) {
   return html`<div class="so-panel ${dark ? "dark" : ""}">
     <div class="so-title">${`${sp.shootoutName} · ${so.perTeam} each, alternating`}</div>
     ${shootoutRows(t, m, so, false)}
-    <div class="so-status">${dot(colorClass(t, so.winnerId ?? nextTeam))}<span>${status}</span></div>
+    <div class="so-status">${dot(colorClass(t, so.exhaustedLevel ? null : so.winnerId ?? nextTeam))}<span>${status}</span></div>
     ${lastLine ? html`<div class="so-last">${lastLine}</div>` : ""}
-    ${so.suddenDeath && so.winnerId == null ? html`<div class="so-foot">Still level after ${so.perTeam} each: one ${sp.shootoutAttemptSingular} at a time until one side is ahead.</div>` : ""}
+    ${foot ? html`<div class="so-foot">${foot}</div>` : ""}
   </div>`;
 }
 
@@ -238,7 +242,8 @@ function liveFeed(t, m) {
 function resultNoteLine(t, m) {
   const note = M.resultNote(m, t);
   if (!note) return "";
-  return html`<div class="note ${M.shootoutResult(m, t.sport) ? "strong" : ""}">${note}</div>`;
+  const afterShootout = M.shootoutResult(m, t.sport) || M.shootoutDraw(m, t.sport);
+  return html`<div class="note ${afterShootout ? "strong" : ""}">${note}</div>`;
 }
 
 // ------------------------------------------------------------------ live score (ticks locally)
@@ -315,7 +320,7 @@ function matchCard(t, m) {
   const finished = m.status === "FINISHED";
   const items = m.status === "SCHEDULED" ? [] : M.buildMatchFeed(t, m);
   // A shootout result without a loaded log still has a timeline to fetch.
-  const canExpand = items.length > 0 || M.shootoutResult(m, t.sport) != null;
+  const canExpand = items.length > 0 || M.shootoutResult(m, t.sport) != null || M.shootoutDraw(m, t.sport) != null;
   const open = state.expanded.has(m.id);
   const badgeEl = { FINISHED: badge("Final", "green"), SCHEDULED: badge("Upcoming", "line"), LIVE: badge("Live", "solid"), BREAK: badge("Break", "accent"), TIEBREAK: badge("Tie-break", "accent") }[m.status];
   const meta = [`Match ${m.number}`, slotText(m), m.label && m.label !== "Match" ? m.label : ""].filter(Boolean).join(" · ");
