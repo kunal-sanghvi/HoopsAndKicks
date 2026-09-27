@@ -97,6 +97,7 @@ import com.hoopsandkicks.tournament.data.canStart
 import com.hoopsandkicks.tournament.data.computeDisplaySeconds
 import com.hoopsandkicks.tournament.data.estimatedEndAt
 import com.hoopsandkicks.tournament.data.exceedsWindow
+import com.hoopsandkicks.tournament.data.roomShareText
 import com.hoopsandkicks.tournament.data.remote.JoinState
 import com.hoopsandkicks.tournament.data.remote.RemoteSync
 import com.hoopsandkicks.tournament.data.remote.ViewerStore
@@ -397,13 +398,9 @@ private fun RoomCodeSheet(t: Tournament, goingLive: Boolean, onDismiss: () -> Un
                         SecondaryButton(
                             "Share link",
                             {
-                                // No web deep link exists yet: share the code with instructions via the system sheet.
                                 val send = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
-                                    putExtra(
-                                        Intent.EXTRA_TEXT,
-                                        "Watch ${t.name} live in Hoops & Kicks: open the app, tap “Have a room code?” and enter $code"
-                                    )
+                                    putExtra(Intent.EXTRA_TEXT, roomShareText(t.name, code))
                                 }
                                 context.startActivity(Intent.createChooser(send, "Share room code"))
                             },
