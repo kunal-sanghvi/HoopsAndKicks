@@ -139,7 +139,7 @@ fun TournamentScreen(
 }
 
 @Composable
-private fun TournamentContent(
+internal fun TournamentContent(
     t: Tournament,
     onBack: () -> Unit,
     onFixtures: () -> Unit,
@@ -491,7 +491,7 @@ private fun StageProgress(t: Tournament) {
 }
 
 @Composable
-private fun UpNextCard(t: Tournament, m: Match, live: Boolean, onOpenMatch: (String, Boolean) -> Unit, readOnly: Boolean = false) {
+internal fun UpNextCard(t: Tournament, m: Match, live: Boolean, onOpenMatch: (String, Boolean) -> Unit, readOnly: Boolean = false) {
     // Informational only: the planned times are a tentative display estimate and never stop a match being started.
     val pastPlan = !live && m.status == MatchStatus.SCHEDULED && m.exceedsWindow(t)
     var fixing by remember { mutableStateOf(false) }
@@ -509,6 +509,7 @@ private fun UpNextCard(t: Tournament, m: Match, live: Boolean, onOpenMatch: (Str
         HText(t.format.forMatch(m).summary(), 13.sp, FontWeight.Normal, MuteDark)
         if (readOnly) {
             if (live) LiveScoreLine(t, m)
+            if (m.status == MatchStatus.TIEBREAK) ShootoutLivePanel(t, m, dark = true)
             if (pastPlan) PastPlanRow(onFix = null, dark = true)
         } else {
             if (pastPlan) PastPlanRow(onFix = { fixing = true }, dark = true)
@@ -714,7 +715,7 @@ fun FixturesScreen(
 }
 
 @Composable
-private fun FixturesContent(
+internal fun FixturesContent(
     t: Tournament, onBack: () -> Unit, onOpenMatch: (String, Boolean) -> Unit, readOnly: Boolean, onReorder: () -> Unit
 ) {
     val id = t.id
@@ -935,13 +936,19 @@ private fun SectionTitle(title: String, sub: String) {
 }
 
 @Composable
-fun MatchCard(t: Tournament, m: Match, onOpenMatch: (String, Boolean) -> Unit, readOnly: Boolean = false) {
+fun MatchCard(
+    t: Tournament, m: Match, onOpenMatch: (String, Boolean) -> Unit, readOnly: Boolean = false,
+    shootoutExpanded: Boolean = false
+) {
     val finished = m.status == MatchStatus.FINISHED
     // Tentative slot ends after the tournament's end time: shown as a note only, the match can still be started.
     val pastPlan = m.status == MatchStatus.SCHEDULED && m.exceedsWindow(t)
     var fixing by remember { mutableStateOf(false) }
-    HCard(modifier = Modifier.clickable(enabled = !readOnly && m.teamAId != null && m.teamBId != null) {
-        onOpenMatch(m.id, m.status == MatchStatus.SCHEDULED)
+    // Viewers can't open the match screens; a tap expands the finished shootout in place instead.
+    var expanded by remember(m.id) { mutableStateOf(shootoutExpanded) }
+    val canExpand = readOnly && m.hasShootoutDetail(t)
+    HCard(modifier = Modifier.clickable(enabled = canExpand || (!readOnly && m.teamAId != null && m.teamBId != null)) {
+        if (readOnly) expanded = !expanded else onOpenMatch(m.id, m.status == MatchStatus.SCHEDULED)
     }, padding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -984,9 +991,9 @@ fun MatchCard(t: Tournament, m: Match, onOpenMatch: (String, Boolean) -> Unit, r
             val slot = m.slotText()
             if (slot.isNotEmpty()) append(" · $slot")
             if (m.label.isNotEmpty() && m.label != "Match") append(" · ${m.label}")
-            if (m.tieNote.isNotEmpty() && finished) append(" · ${m.tieNote}")
         }
         HText(meta, 12.sp, FontWeight.Normal, Mute)
+        MatchCardShootout(t, m, readOnly, expanded)
         if (pastPlan) {
             Spacer(Modifier.height(8.dp))
             PastPlanRow(onFix = if (readOnly) null else ({ fixing = true }))

@@ -5,7 +5,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,11 +54,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -75,6 +71,7 @@ import com.hoopsandkicks.tournament.data.MatchStatus
 import com.hoopsandkicks.tournament.data.Sport
 import com.hoopsandkicks.tournament.data.Tournament
 import com.hoopsandkicks.tournament.data.shootout
+import com.hoopsandkicks.tournament.data.shootoutResult
 
 private fun onColor(c: Color): Color = if (c.luminance() > 0.5f) Ink else Color.White
 
@@ -585,59 +582,12 @@ private fun TieBreakerContent(t: Tournament, m: Match, vm: LiveViewModel) {
     }
 }
 
-/** One team's shootout line: colour dot, name, one circle per attempt slot, and "made/taken". */
-@Composable
-private fun ShootoutRow(name: String, color: Color, results: List<Boolean>, slots: Int) {
-    Row(Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
-        Dot(color, 12.dp)
-        Spacer(Modifier.width(10.dp))
-        HText(name, 14.sp, FontWeight.Bold, Ink, Modifier.width(62.dp), maxLines = 1)
-        Spacer(Modifier.width(10.dp))
-        Row(
-            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            for (i in 0 until slots) ShotDot(results.getOrNull(i))
-        }
-        Spacer(Modifier.width(10.dp))
-        HText("${results.count { it }}/${results.size}", 14.sp, FontWeight.Bold, Mute)
-    }
-}
-
-private val ShotMissBg = Color(0xFFF7DEDC)
-private val ShotMissFg = Color(0xFFB3261E)
-
-/** true = made (green, white check), false = missed (red X), null = still to take (dashed outline). */
-@Composable
-private fun ShotDot(made: Boolean?) {
-    when (made) {
-        true -> Box(Modifier.size(26.dp).clip(CircleShape).background(Green), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.Check, "Made", tint = Color.White, modifier = Modifier.size(14.dp))
-        }
-        false -> Box(
-            Modifier.size(26.dp).clip(CircleShape).background(ShotMissBg).border(BorderStroke(1.dp, ShotMissFg), CircleShape),
-            contentAlignment = Alignment.Center
-        ) { Icon(Icons.Filled.Close, "Missed", tint = ShotMissFg, modifier = Modifier.size(12.dp)) }
-        null -> Box(
-            Modifier.size(26.dp).clip(CircleShape).background(Surface).drawBehind {
-                val w = 1.dp.toPx()
-                drawCircle(
-                    color = Line,
-                    radius = (size.minDimension - w) / 2f,
-                    style = Stroke(width = w, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())))
-                )
-            }
-        )
-    }
-}
-
 // ======================= SUMMARY =======================
 
 @Composable
 private fun SummaryContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: () -> Unit) {
     val pts = pointsByPlayer(m)
     val pom = pts.entries.maxByOrNull { it.value }
-    val winnerColor = teamColorOf(t, m.winnerId)
     // Set when the shootout decided it, e.g. "Won 2–1 on free throws · tie-breaker recorded".
     val note = m.tieNote
 
@@ -675,20 +625,8 @@ private fun SummaryContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: (
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Navy).padding(18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (m.isDraw) Badge("Draw", Navy3, OnDark)
-                else Badge("Winner: ${t.teamName(m.winnerId)}", winnerColor, onColor(winnerColor))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    DisplayText("${m.scoreA}", 80.sp, if (m.isDraw || m.winnerId == m.teamAId) OnDark else MuteDark)
-                    HText("–", 26.sp, FontWeight.Medium, MuteDark)
-                    DisplayText("${m.scoreB}", 80.sp, if (m.isDraw || m.winnerId == m.teamBId) OnDark else MuteDark)
-                }
-                HText("${t.teamName(m.teamAId)} vs ${t.teamName(m.teamBId)} · ${m.title(t)}".uppercase(), 12.sp, FontWeight.Bold, MuteDark, align = TextAlign.Center)
-            }
+            FullTimeScoreCard(t, m)
+            ShootoutResultCard(t, m)
             if (pom != null && pom.value > 0) {
                 val team = t.teams.firstOrNull { pom.key in it.playerIds }
                 HCard {
@@ -709,7 +647,8 @@ private fun SummaryContent(t: Tournament, m: Match, vm: LiveViewModel, onExit: (
                     column(m.teamBId, m.lineupB, Modifier.weight(1f))
                 }
             }
-            if (note.isNotEmpty()) HText(note, 13.sp, FontWeight.Medium, Mute, Modifier.fillMaxWidth(), TextAlign.Center)
+            // Draws and shootouts are explained above; only older notes are still shown here.
+            if (note.isNotEmpty() && !m.isDraw && m.shootoutResult(t.sport) == null) HText(note, 13.sp, FontWeight.Medium, Mute, Modifier.fillMaxWidth(), TextAlign.Center)
             Spacer(Modifier.height(8.dp))
         }
         BottomBar {

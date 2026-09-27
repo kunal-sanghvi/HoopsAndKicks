@@ -45,6 +45,8 @@ import com.hoopsandkicks.tournament.data.StandingRow
 import com.hoopsandkicks.tournament.data.Standings
 import com.hoopsandkicks.tournament.data.TStatus
 import com.hoopsandkicks.tournament.data.Tournament
+import com.hoopsandkicks.tournament.data.shootout
+import com.hoopsandkicks.tournament.data.shootoutResult
 
 private fun col(t: Tournament, id: String?): Color = t.team(id)?.let { teamColor(it.color) } ?: Mute
 
@@ -247,8 +249,9 @@ private fun StandingsTable(t: Tournament, rows: List<StandingRow>, qualify: Int)
 }
 
 @Composable
-private fun ResultCard(t: Tournament, m: Match) {
+internal fun ResultCard(t: Tournament, m: Match) {
     val fin = m.status == MatchStatus.FINISHED
+    val pens = m.shootoutResult(t.sport)
     Column {
         HText(m.label.ifEmpty { m.stage }.uppercase(), 12.sp, FontWeight.Bold, Mute, Modifier.padding(start = 4.dp, bottom = 6.dp))
         HCard(padding = 4.dp) {
@@ -260,14 +263,15 @@ private fun ResultCard(t: Tournament, m: Match) {
                     Dot(col(t, id), 10.dp)
                     Spacer(Modifier.width(8.dp))
                     HText(t.teamName(id), 14.sp, if (won) FontWeight.Bold else FontWeight.Medium, Ink, Modifier.weight(1f), maxLines = 1)
+                    if (pens != null) HText("(${pens.madeBy(id)}) ", 13.sp, FontWeight.Medium, Mute)
                     HText(if (m.status == MatchStatus.SCHEDULED) "–" else "$score", 15.sp, if (won) FontWeight.Bold else FontWeight.Medium)
                 }
                 if (i == 0) Divider1()
             }
         }
-        if (fin && m.tieNote.isNotEmpty()) HText(m.tieNote, 12.sp, FontWeight.Medium, Mute, Modifier.padding(start = 4.dp, top = 4.dp))
+        ResultNoteLine(t, m, Modifier.padding(start = 4.dp, top = 4.dp))
         if (m.status != MatchStatus.SCHEDULED && !fin) HText(
-            if (m.status == MatchStatus.TIEBREAK) "Tied, ${t.sport.shootoutNameLower} in progress" else "In progress",
+            if (m.status == MatchStatus.TIEBREAK) m.shootout(t.sport).let { "Tied, ${t.sport.shootoutNameLower} in progress · ${it.madeA}–${it.madeB}" } else "In progress",
             12.sp, FontWeight.Medium, Accent, Modifier.padding(start = 4.dp, top = 4.dp)
         )
     }
