@@ -1,4 +1,4 @@
-// Run with:  node --test web-tests/
+// Run with:  node --test web-tests/model.test.mjs
 // Mirrors the Kotlin unit tests for the parts the web viewer ports (event replay, shootout, standings).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -83,9 +83,9 @@ test("substitution swaps the lineup", () => {
   assert.deepEqual(M.replay(base.matches[0], log, base.format).lineupA, ["px"]);
 });
 
-function shootoutLog(results) {
+function shootoutLog(results, [ta, tb] = ["a", "b"]) {
   seq = 0;
-  const log = [ev("MATCH_START", { clockSec: 720 }), ev("SCORE", { teamId: "a", points: 2, note: "2 00:10" }), ev("SCORE", { teamId: "b", points: 2, note: "2 00:05" }), ev("TIEBREAK_START")];
+  const log = [ev("MATCH_START", { clockSec: 720 }), ev("SCORE", { teamId: ta, points: 2, note: "2 00:10" }), ev("SCORE", { teamId: tb, points: 2, note: "2 00:05" }), ev("TIEBREAK_START")];
   for (const [team, made] of results) log.push(ev("SHOOTOUT_ATTEMPT", { teamId: team, playerId: team === "a" ? "pa" : "pb", points: made ? 1 : 0 }));
   return log;
 }
@@ -101,8 +101,10 @@ test("basketball shootout: alternating attempts, decided early, tally read from 
   assert.equal(so.decided, true);
 });
 
-test("shootout goes to sudden death when level after the allotment", () => {
-  const t = t0([rawMatch({})]);
+const koMatch = (o = {}) => rawMatch({ stage: "Semi-finals", stageType: "KNOCKOUT", group: "", ...o });
+
+test("knockout shootout goes to sudden death when level after the allotment", () => {
+  const t = t0([koMatch()]);
   const log = shootoutLog([["a", 1], ["b", 1], ["a", 0], ["b", 0], ["a", 1], ["b", 1]]); // 2-2 after 3 each
   const so = M.shootout(M.replay(t.matches[0], log, t.format), "BASKETBALL");
   assert.equal(so.winnerId, null);
@@ -110,6 +112,52 @@ test("shootout goes to sudden death when level after the allotment", () => {
   assert.equal(so.slots, 4);
   const log2 = [...log, ev("SHOOTOUT_ATTEMPT", { teamId: "a", points: 1 }), ev("SHOOTOUT_ATTEMPT", { teamId: "b", points: 0 })];
   assert.equal(M.shootout(M.replay(t.matches[0], log2, t.format), "BASKETBALL").winnerId, "a");
+});
+
+test("a final is knockout-like too: sudden death, even though its stageType is LEAGUE", () => {
+  const t = t0([rawMatch({ stage: "Final", stageType: "LEAGUE", group: "", isFinal: true })]);
+  const so = M.shootout(M.replay(t.matches[0], shootoutLog([["a", 1], ["b", 1], ["a", 0], ["b", 0], ["a", 1], ["b", 1]]), t.format), "BASKETBALL");
+  assert.deepEqual([so.singleRound, so.suddenDeath, so.exhaustedLevel, so.slots], [false, true, false, 4]);
+});
+
+test("group shootout: single round, no sudden death, level after all attempts is exhausted", () => {
+  const t = t0([rawMatch({})]);
+  const mid = M.shootout(M.replay(t.matches[0], shootoutLog([["a", 1], ["b", 1], ["a", 0]]), t.format), "BASKETBALL");
+  assert.deepEqual([mid.singleRound, mid.suddenDeath, mid.exhaustedLevel, mid.nextIsA, mid.nextAttemptNumber, mid.slots], [true, false, false, false, 2, 3]);
+  const log = shootoutLog([["a", 1], ["b", 1], ["a", 0], ["b", 0], ["a", 1], ["b", 1]]); // 2-2 after 3 each
+  const so = M.shootout(M.replay(t.matches[0], log, t.format), "BASKETBALL");
+  assert.deepEqual([so.winnerId, so.suddenDeath, so.exhaustedLevel, so.slots], [null, false, true, 3]);
+  const none = M.shootout(M.replay(t.matches[0], shootoutLog([]), t.format), "BASKETBALL");
+  assert.deepEqual([none.nextIsA, none.nextAttemptNumber, none.suddenDeath, none.exhaustedLevel, none.slots], [true, 1, false, false, 3]);
+});
+
+test("group shootout level after all attempts finishes as a draw with the tally", () => {
+  const t = t0([rawMatch({})]);
+  const log = shootoutLog([["a", 1], ["b", 1], ["a", 0], ["b", 0], ["a", 1], ["b", 1]]);
+  log.push(ev("MATCH_END", { teamId: null, note: "Draw · 2–2 on free throws" }));
+  const m = M.replay(t.matches[0], log, t.format);
+  assert.deepEqual([m.status, m.winnerId, M.isDraw(m)], ["FINISHED", null, true]);
+  const tt = { ...t, matches: [m] };
+  assert.equal(M.resultNote(m, tt), "Draw · 2–2 on free throws");
+  assert.equal(M.shootoutResult(m, "BASKETBALL"), null);
+  assert.deepEqual(M.shootoutDraw(m, "BASKETBALL"), { madeA: 2, madeB: 2 });
+  assert.equal(M.hasShootoutDetail(m, tt), true);
+  // Snapshot only (log not loaded): the tally comes from the note.
+  const bare = { ...t.matches[0], status: "FINISHED", scoreA: 2, scoreB: 2, winnerId: null, tieNote: "Draw · 1–1 on free kicks" };
+  assert.equal(M.resultNote(bare, { ...t, sport: "FOOTBALL" }), "Draw · 1–1 on free kicks");
+});
+
+test("group shootout: early decision and a winner after all attempts, both finish with that winner", () => {
+  const t = t0([rawMatch({})]);
+  const early = M.shootout(M.replay(t.matches[0], shootoutLog([["a", 1], ["b", 0]]), t.format), "BASKETBALL");
+  assert.equal(early.winnerId, null); // 1-0 with two each left: B can still level
+  const decided = M.shootout(M.replay(t.matches[0], shootoutLog([["a", 1], ["b", 0], ["a", 1], ["b", 0], ["a", 1]]), t.format), "BASKETBALL");
+  assert.deepEqual([decided.winnerId, decided.exhaustedLevel], ["a", false]);
+  const won = shootoutLog([["a", 1], ["b", 1], ["a", 0], ["b", 1], ["a", 1], ["b", 1]]); // b 3, a 2 after 3 each
+  won.push(ev("MATCH_END", { teamId: "b", note: "Won 3–2 on free throws · tie-breaker recorded" }));
+  const m = M.replay(t.matches[0], won, t.format);
+  assert.deepEqual([m.status, m.winnerId], ["FINISHED", "b"]);
+  assert.equal(M.resultNote(m, { ...t, matches: [m] }), "Blue won 3–2 on free throws");
 });
 
 test("a voided shootout attempt is ignored", () => {
@@ -288,4 +336,31 @@ test("feed: a substitution with players that are not on the roster says Unknown 
     ev("SUB", { teamId: "a", outPlayerId: "ghost1", inPlayerId: "ghost2" }),
   ]);
   assert.equal(items[0].title, "Unknown player on for Unknown player");
+});
+
+test("feed: full time after a group shootout reads 'Draw · 2–2 on free throws' or 'Won 2–1 on free throws'", () => {
+  const draw = shootoutLog([["a", 1], ["b", 1], ["a", 0], ["b", 0], ["a", 1], ["b", 1]]);
+  draw.push(ev("MATCH_END", { teamId: null, note: "Draw · 2–2 on free throws" }));
+  const items = feedOf(draw);
+  assert.deepEqual([items[2].title, items.at(-1).title, items.at(-1).subtitle, items.at(-1).teamId], ["Free-throw shootout", "Full time", "Draw · 2–2 on free throws", null]);
+  const tailed = shootoutLog([["a", 1], ["b", 1], ["a", 0], ["b", 0], ["a", 1], ["b", 1]]);
+  tailed.push(ev("MATCH_END", { teamId: null, note: "Draw · 2–2 on free throws · tie-breaker recorded" }));
+  assert.equal(feedOf(tailed).at(-1).subtitle, "Draw · 2–2 on free throws");
+  const won = shootoutLog([["a", 1], ["b", 0], ["a", 0], ["b", 1], ["a", 1], ["b", 0]]);
+  won.push(ev("MATCH_END", { teamId: "a", note: "Won 2–1 on free throws · tie-breaker recorded" }));
+  assert.equal(feedOf(won).at(-1).subtitle, "Won 2–1 on free throws");
+});
+
+test("standings: a group shootout winner earns win points, a draw after the shootout earns tie points", () => {
+  const log = (results, end, teams) => { const l = shootoutLog(results, teams); l.push(ev("MATCH_END", end)); return l; };
+  const t = t0([rawMatch({ id: "g1" }), rawMatch({ id: "g2", teamAId: "c", teamBId: "d" })], { winPoints: 3 });
+  const won = M.replay(t.matches[0], log([["a", 1], ["b", 0], ["a", 0], ["b", 1], ["a", 1], ["b", 0]], { teamId: "a", note: "Won 2–1 on free throws · tie-breaker recorded" }), t.format);
+  const drew = M.replay(t.matches[1], log([["c", 1], ["d", 1], ["c", 0], ["d", 0], ["c", 1], ["d", 1]], { teamId: null, note: "Draw · 2–2 on free throws" }, ["c", "d"]), t.format);
+  assert.deepEqual([drew.scoreA, drew.scoreB, drew.winnerId], [2, 2, null]);
+  const rows = M.computeStandings(["a", "b", "c", "d"], [won, drew], { win: 3, tie: 1, loss: 0 });
+  const by = Object.fromEntries(rows.map((r) => [r.teamId, [r.wins, r.losses, r.ties, r.points]]));
+  assert.deepEqual(by, { a: [1, 0, 0, 3], b: [0, 1, 0, 0], c: [0, 0, 1, 1], d: [0, 0, 1, 1] });
+  const overall = M.overall({ ...t, matches: [won, drew] });
+  assert.equal(overall.find((r) => r.teamId === "a").total, 3);
+  assert.equal(overall.find((r) => r.teamId === "c").tied, 1);
 });

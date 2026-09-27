@@ -113,7 +113,8 @@ The app is Android-only, so viewers on iPhones (or anything with a browser) use 
 `docs/`, is plain HTML/CSS/JS with no build step, and reads the same Firestore room the Android viewer does: the hub with
 the live match and clock, fixtures, standings, teams and top scorers, including live shootouts. A match feed (scorers with the
 running score, substitutions, half-time, shootout attempts, full time) shows the latest five on the live card, and the
-whole timeline when a fixture card is tapped. It works on phone screens
+whole timeline when a fixture card is tapped. A group or league shootout has no sudden death: still level after every attempt,
+it shows as "Draw · 2–2 on free throws". It works on phone screens
 and follows the system dark mode. Open `https://<your-github-user>.github.io/<repo>/`, type the 6-character room code,
 or share a direct link: `https://<your-github-user>.github.io/<repo>/?room=ABC234`.
 
