@@ -111,7 +111,9 @@ show an error and everything else keeps working offline.
 
 The app is Android-only, so viewers on iPhones (or anything with a browser) use a read-only web page instead. It lives in
 `docs/`, is plain HTML/CSS/JS with no build step, and reads the same Firestore room the Android viewer does: the hub with
-the live match and clock, fixtures, standings, teams and top scorers, including live shootouts. It works on phone screens
+the live match and clock, fixtures, standings, teams and top scorers, including live shootouts. A match feed (scorers with the
+running score, substitutions, half-time, shootout attempts, full time) shows the latest five on the live card, and the
+whole timeline when a fixture card is tapped. It works on phone screens
 and follows the system dark mode. Open `https://<your-github-user>.github.io/<repo>/`, type the 6-character room code,
 or share a direct link: `https://<your-github-user>.github.io/<repo>/?room=ABC234`.
 
@@ -126,7 +128,8 @@ Keep `model.js` in step with the Kotlin it mirrors (each section names its sourc
 Run its tests with `node --test web-tests/model.test.mjs`.
 
 To read fewer documents than the Android viewer, the page only listens to the event log of matches that are in progress;
-a finished match's result already comes from the room snapshot, and its shootout attempts are fetched when a card is tapped.
+a finished match's result already comes from the room snapshot, and its event log (for the match feed) is fetched once, when
+its card is tapped. Until a log arrives, the feed falls back to the scorers in the room snapshot.
 
 One-time setup (the app itself needs none of this):
 

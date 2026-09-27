@@ -193,3 +193,90 @@ test("expectedStages lists the stages still to come", () => {
   assert.deepEqual(M.expectedStages(t0([], { algorithm: "ROUND_ROBIN", rrSemis: true, rrFinal: true, teams: [1, 2, 3, 4, 5].map((i) => team(`t${i}`, `T${i}`)) })), ["Round Robin", "Semi-finals", "Final"]);
   assert.deepEqual(M.expectedStages(t0([], { algorithm: "SWISS" })), ["Swiss"]);
 });
+
+// ------------------------------------------------------------------ match feed
+
+const feedOf = (log, o = {}, t = t0([rawMatch(o)])) => M.buildMatchFeed(t, M.replay(t.matches[0], log, t.format));
+
+test("feed: chronological, running score, halftime, subs, noise skipped", () => {
+  seq = 0;
+  const items = feedOf([
+    ev("MATCH_START", { clockSec: 720 }), ev("RESUME"),
+    ev("SCORE", { teamId: "a", playerId: "pa", points: 3, note: "1 11:40" }),
+    ev("PAUSE"), ev("SUB", { teamId: "b", outPlayerId: "pb", inPlayerId: "pa" }), ev("RESUME"),
+    ev("SCORE", { teamId: "b", playerId: "pb", points: 2, note: "1 10:00" }),
+    ev("BREAK_START", { clockSec: 300 }), ev("BREAK_END"), ev("PERIOD_START", { clockSec: 720 }),
+    ev("SCORE", { teamId: "a", playerId: "pa", points: 1, note: "2 09:05" }),
+  ]);
+  assert.deepEqual(items.map((i) => i.kind), ["score", "sub", "score", "halftime", "score"]);
+  assert.deepEqual(items.map((i) => i.title), ["Ana +3", "Ana on for Ben", "Ben +2", "Half-time", "Ana +1"]);
+  assert.deepEqual(items.map((i) => i.subtitle), ["Red · 3–0", "Blue", "Blue · 3–2", null, "Red · 4–2"]);
+  assert.deepEqual([items[0].time, items[4].time, items[1].time], ["1 11:40", "2 09:05", null]);
+  assert.deepEqual([items[4].scoreA, items[4].scoreB, items[4].points, items[4].playerName], [4, 2, 1, "Ana"]);
+  assert.deepEqual(M.newestFirst(items, 2).map((i) => i.title), ["Ana +1", "Half-time"]);
+  assert.equal(M.newestFirst(items).length, 5);
+  assert.equal(items[0].title, "Ana +3"); // newestFirst does not reorder the original
+});
+
+test("feed: a voided score disappears and the running score skips it", () => {
+  seq = 0;
+  const log = [ev("MATCH_START"), ev("SCORE", { teamId: "a", playerId: "pa", points: 2, note: "1 10:00" }), ev("SCORE", { teamId: "b", points: 3, note: "1 09:00" })];
+  log.push(ev("VOID", { voidsSeq: 2 }), ev("SCORE", { teamId: "b", playerId: "pb", points: 2, note: "1 08:00" }));
+  const items = feedOf(log);
+  assert.deepEqual(items.map((i) => [i.title, i.subtitle]), [["Blue +3", "Blue · 0–3"], ["Ben +2", "Blue · 0–5"]]);
+  assert.equal(items[0].playerName, null);
+});
+
+test("feed: falls back to the snapshot's score events when the log is not loaded", () => {
+  const t = t0([rawMatch({ status: "LIVE", scoreA: 3, events: [
+    { id: "x", teamId: "a", playerId: "pa", points: 2, period: "1", clock: "08:30" },
+    { id: "y", teamId: "a", playerId: "ghost", points: 1, period: "1", clock: "" },
+  ] })]);
+  const items = M.buildMatchFeed(t, t.matches[0]);
+  assert.deepEqual(items.map((i) => [i.title, i.subtitle, i.time]), [["Ana +2", "Red · 2–0", "1 08:30"], ["Red +1", "Red · 3–0", null]]);
+  assert.equal(items[1].playerName, null); // unknown player id
+  const empty = t0([rawMatch({})]);
+  assert.deepEqual(M.buildMatchFeed(empty, empty.matches[0]), []);
+});
+
+test("feed: full time reads '<Winner> won' or 'Draw', and a reopened match loses its old full time", () => {
+  seq = 0;
+  const win = feedOf([ev("MATCH_START"), ev("SCORE", { teamId: "b", points: 2, note: "1 05:00" }), ev("MATCH_END", { teamId: "b" })]);
+  assert.deepEqual([win.at(-1).kind, win.at(-1).title, win.at(-1).subtitle], ["fulltime", "Full time", "Blue won"]);
+  seq = 0;
+  const draw = [ev("MATCH_START"), ev("MATCH_END", { note: "Draw" })];
+  assert.deepEqual(feedOf(draw).map((i) => [i.title, i.subtitle]), [["Full time", "Draw"]]);
+  assert.deepEqual(feedOf([...draw, ev("REOPEN")]), []);
+});
+
+test("feed: shootout header, attempts, voided attempt, and the tie note as the result line", () => {
+  const log = shootoutLog([["a", 1], ["b", 0], ["a", 1], ["b", 1]]);
+  log.push(ev("VOID", { voidsSeq: log.at(-1).seq }), ev("SHOOTOUT_ATTEMPT", { teamId: "b", points: 0 }), ev("SHOOTOUT_ATTEMPT", { teamId: "a", playerId: "pa", points: 1 }));
+  log.push(ev("MATCH_END", { teamId: "a", note: "Won 3–0 on free throws · tie-breaker recorded" }));
+  const items = feedOf(log);
+  assert.deepEqual(items.map((i) => i.title), [
+    "Red +2", "Blue +2", "Free-throw shootout", "Ana made", "Ben missed", "Ana made", "Blue missed", "Ana made", "Full time",
+  ]);
+  assert.deepEqual([items[4].subtitle, items[4].made], ["Blue", false]);
+  assert.equal(items.at(-1).subtitle, "Won 3–0 on free throws");
+});
+
+test("feed: undoing a score from the tie-break drops that shootout header", () => {
+  const log = shootoutLog([]);
+  log.push(ev("VOID", { voidsSeq: 3, clockSec: 0 }));
+  assert.deepEqual(feedOf(log).map((i) => i.title), ["Red +2"]);
+});
+
+test("feed: football wording", () => {
+  seq = 0;
+  const t = t0([rawMatch({})], { sport: "FOOTBALL" });
+  const log = [
+    ev("MATCH_START"), ev("SCORE", { teamId: "a", playerId: "pa", points: 1, note: "1 03:12" }), ev("SCORE", { teamId: "b", points: 1, note: "2 01:00" }),
+    ev("TIEBREAK_START"), ev("SHOOTOUT_ATTEMPT", { teamId: "a", playerId: "pa", points: 1 }), ev("SHOOTOUT_ATTEMPT", { teamId: "b", playerId: "pb", points: 0 }),
+  ];
+  const items = M.buildMatchFeed(t, M.replay(t.matches[0], log, t.format));
+  assert.deepEqual(items.map((i) => [i.title, i.subtitle, i.time]), [
+    ["Goal · Ana", "Red · 1–0", "1 03:12"], ["Goal · Blue", "Blue · 1–1", "2 01:00"],
+    ["Free-kick shootout", null, null], ["Ana scored", "Red", null], ["Ben missed", "Blue", null],
+  ]);
+});
